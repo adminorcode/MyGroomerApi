@@ -2,7 +2,7 @@ import { getPool } from "../config/database.config"
 import { logger } from "../config/logger.config"
 import { CACHE_KEYS, CACHE_TTL } from "../constants"
 import { QueryType } from "../types/pagination.types"
-import { CreateProvider, CreateProviderService, Provider, ProviderService } from "../types/provider.types"
+import { CoverageProvider, CreateProvider, CreateProviderService, Provider, ProviderService } from "../types/provider.types"
 import { Transaction } from "../types/transaction.types"
 import { AppError } from '../middlewares/errorHandler'
 import { deleteCache, getCache, setCache } from "../utils/cache.utils"
@@ -271,6 +271,87 @@ export const fetchServiceProviders = async(service_id:string):Promise<Provider[]
     } catch (error) {
         throw error
     }
+}
+
+export const fetchProvidersByCoverage = async (input: {
+    latitude: number
+    longitude: number
+    serviceId?: string
+    categoryId?: string
+}): Promise<CoverageProvider[]> => {
+    const pool = getPool()
+    const result = await pool.query(
+        `
+        WITH located AS (
+            SELECT
+                providers.id,
+                providers.user_id,
+                providers.radius_km,
+                users.name,
+                users.profile_picture,
+                (
+                    6371 * acos(
+                        LEAST(1::double precision, GREATEST(-1::double precision,
+                            cos(radians($1)) * cos(radians(providers.base_latitude::double precision))
+                            * cos(radians(providers.base_longitude::double precision) - radians($2))
+                            + sin(radians($1)) * sin(radians(providers.base_latitude::double precision))
+                        ))
+                    )
+                ) AS distance_km,
+                (
+                    SELECT COALESCE(ROUND(AVG(r.rating)::numeric, 1), 0)
+                    FROM reviews r
+                    WHERE r.provider_user_id = providers.user_id
+                )::float AS average_rating,
+                (
+                    SELECT COUNT(*)::int
+                    FROM reviews r
+                    WHERE r.provider_user_id = providers.user_id
+                ) AS review_count
+            FROM providers
+            INNER JOIN users ON providers.user_id = users.id
+            WHERE providers.base_latitude IS NOT NULL
+                AND providers.base_longitude IS NOT NULL
+                AND providers.radius_km IS NOT NULL
+        )
+        SELECT
+            picked.id,
+            picked.provider_id,
+            picked.service_id,
+            picked.service_name,
+            picked.name,
+            picked.profile_picture,
+            picked.price,
+            picked.average_rating,
+            picked.review_count,
+            picked.radius_km,
+            ROUND(picked.distance_km::numeric, 1)::float AS distance_km
+        FROM (
+            SELECT DISTINCT ON (located.id)
+                provider_services.id,
+                located.id AS provider_id,
+                provider_services.service_id,
+                services.name AS service_name,
+                located.name,
+                located.profile_picture,
+                provider_services.price,
+                located.average_rating,
+                located.review_count,
+                located.radius_km,
+                located.distance_km
+            FROM located
+            INNER JOIN provider_services ON provider_services.provider_id = located.id
+            INNER JOIN services ON provider_services.service_id = services.id
+            WHERE located.distance_km <= located.radius_km
+                AND ($3::uuid IS NULL OR provider_services.service_id = $3::uuid)
+                AND ($4::uuid IS NULL OR services.category_id = $4::uuid)
+            ORDER BY located.id, provider_services.price ASC, services.name ASC
+        ) picked
+        ORDER BY picked.distance_km ASC, picked.name ASC
+        `,
+        [input.latitude, input.longitude, input.serviceId ?? null, input.categoryId ?? null]
+    )
+    return result.rows
 }
 
 export const modifyProviderService = async(provider_service_id:string, service_id:string, update:CreateProviderService):Promise<ProviderService | null> => {

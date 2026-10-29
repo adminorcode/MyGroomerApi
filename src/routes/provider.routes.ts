@@ -5,13 +5,14 @@ import {
     getProviderServiceById, 
     getProviderServices, 
     getServiceProviders, 
+    searchCoverage,
     updateProviderService, 
     removeProviderService,
     registerAsProvider,
     getProviderEarnings
 } from "../controllers/provider.controller";
-import { validate } from "../middlewares/validate.middleware";
-import { addProviderServiceSchema, registerProviderSchema, updateProviderServiceSchema } from "../validators/provider.validator";
+import { validate, validateQuery } from "../middlewares/validate.middleware";
+import { addProviderServiceSchema, coverageSearchSchema, registerProviderSchema, updateProviderServiceSchema } from "../validators/provider.validator";
 
 const router = Router()
 
@@ -22,6 +23,8 @@ router.post('/register', authenticate, validate(registerProviderSchema), registe
 router.post('/', authenticate,validate(addProviderServiceSchema), createProviderService)
 
 router.get('/service/:serviceId/providers', authenticate, getServiceProviders)
+
+router.get('/coverage', authenticate, validateQuery(coverageSearchSchema), searchCoverage)
 
 router.get('/earnings', authenticate, getProviderEarnings)
 

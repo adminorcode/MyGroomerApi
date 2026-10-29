@@ -10,8 +10,11 @@ import {
     findProviderByUserId,
     findProviderServiceById,
     findProviderServiceByIdWithProviderDetails,
-    fetchProviderTransactions
+    fetchProviderTransactions,
+    fetchProvidersByCoverage
 } from "../services/provider.service"
+import { resolveCoverageAddress } from "../services/coverage.geo"
+import { CoverageSearchQuery } from "../validators/provider.validator"
 import { QueryType } from "../types/pagination.types"
 import { CreateProvider, CreateProviderService, PayoutMethod } from "../types/provider.types"
 import { updateUser } from "../services/user.service"
@@ -96,6 +99,36 @@ export const getProviderServices = async (req: Request, res: Response) => {
     res.status(200).json({
         success: true,
         data: providerServices
+    })
+}
+
+export const searchCoverage = async (req: Request, res: Response) => {
+    const query = req.query as unknown as CoverageSearchQuery
+    const latitude = query.latitude
+    const longitude = query.longitude
+    const resolved = latitude === undefined || longitude === undefined
+        ? resolveCoverageAddress(query.address)
+        : { latitude, longitude, label: query.address }
+
+    if (!resolved) {
+        throw new AppError('Não foi possível localizar este endereço.', 400)
+    }
+
+    const providers = await fetchProvidersByCoverage({
+        latitude: resolved.latitude,
+        longitude: resolved.longitude,
+        serviceId: query.service_id,
+        categoryId: query.category_id,
+    })
+
+    res.status(200).json({
+        success: true,
+        data: {
+            address: query.address,
+            latitude: resolved.latitude,
+            longitude: resolved.longitude,
+            providers,
+        },
     })
 }
 

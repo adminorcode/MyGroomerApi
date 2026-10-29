@@ -19,6 +19,12 @@ const seed = async () => {
         await client.query(`INSERT INTO providers(id,user_id,is_verified,payout_method,momo_number,momo_provider,
             total_jobs_completed,service_area) VALUES ($1,$2,true,'mobile_money','000000000','mtn',3,'Demonstracao local')
             ON CONFLICT DO NOTHING`, [id(3), id(2)])
+        await client.query(`UPDATE providers SET
+            base_address = COALESCE(base_address, 'Avenida Paulista, São Paulo'),
+            base_latitude = COALESCE(base_latitude, -23.561414),
+            base_longitude = COALESCE(base_longitude, -46.655881),
+            radius_km = COALESCE(radius_km, 8)
+            WHERE id = $1`, [id(3)])
         await client.query(`INSERT INTO categories(id,name,description) VALUES
             ($1,'Banho e Tosa','Servicos demonstrativos para explorar o aplicativo') ON CONFLICT DO NOTHING`, [id(4)])
         const services = [[5,'Banho','Banho demonstrativo',80],[6,'Tosa','Tosa demonstrativa',100],[7,'Banho e tosa','Atendimento demonstrativo completo',150]] as const

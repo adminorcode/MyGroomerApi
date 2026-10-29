@@ -55,7 +55,7 @@ after(async () => {
 
 test('schema is migrated and demonstration screens have data',async()=>{
     const migrations=await pool.query('SELECT name FROM schema_migrations ORDER BY name')
-    assert.equal(migrations.rowCount,5)
+    assert.equal(migrations.rowCount,6)
     for(const [route,token] of [['/categories',tutor],['/bookings',tutor],['/bookings?as=provider',groomer],['/conversations',tutor],['/providers',groomer]]) {
         const result=await request(route,'GET',undefined,token)
         assert.equal(result.status,200,route)
