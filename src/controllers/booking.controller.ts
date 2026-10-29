@@ -9,7 +9,8 @@ import { initializePaystackPayment, refundPaystackPayment } from "../utils/payst
 import { findProviderServiceById } from "../services/provider.service";
 import { CANCELLATION_FEE_RATE } from "../constants";
 import { logger } from "../config/logger.config";
-import { isLocalTestMode } from '../config/runtime.config';
+import { isLocalTestMode } from '../config/runtime.config'
+import { findPetForOwner } from '../services/pet.service';
 
 const bookingStatusLabel: Record<BookingStatus, string> = {
     [BookingStatus.PENDING_PAYMENT]: 'pagamento pendente',
@@ -22,14 +23,19 @@ const bookingStatusLabel: Record<BookingStatus, string> = {
 
 export const createBooking = async (req:Request, res:Response) => {
     const user = req.user
-    const {provider_service_id, scheduled_at, customer_location, customer_latitude, customer_longitude} = req.body
+    const {pet_id, provider_service_id, scheduled_at, customer_location, customer_latitude, customer_longitude} = req.body
 
     if(!user){
         throw new AppError('Não autorizado', 401)
     }
 
-    if (!provider_service_id || !scheduled_at || !customer_location){
-        throw new AppError('Informe o serviço, a data e o local do atendimento', 400)
+    if (!pet_id || !provider_service_id || !scheduled_at || !customer_location){
+        throw new AppError('Informe o pet, o serviço, a data e o local do atendimento', 400)
+    }
+
+    const pet = await findPetForOwner(pet_id, user.id)
+    if (!pet) {
+        throw new AppError('Pet não encontrado', 404)
     }
 
     const providerService = await findProviderServiceById(provider_service_id)
@@ -40,6 +46,7 @@ export const createBooking = async (req:Request, res:Response) => {
     
     const input:CreateBookingInput =  {
         customer_id: user.id,
+        pet_id,
         provider_service_id,
         scheduled_at,
         customer_location,

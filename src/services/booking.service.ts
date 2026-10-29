@@ -10,13 +10,14 @@ export const insertBooking = async(bookingInput: CreateBookingInput, initialStat
         const result = await pool.query(
             `
             INSERT INTO bookings 
-                (customer_id, provider_service_id, scheduled_at, customer_location, booking_status, customer_latitude, customer_longitude) 
+                (customer_id, pet_id, provider_service_id, scheduled_at, customer_location, booking_status, customer_latitude, customer_longitude) 
             VALUES 
-                ($1, $2, $3, $4, $5, $6, $7)
+                ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
             `,
             [
                 bookingInput.customer_id,
+                bookingInput.pet_id,
                 bookingInput.provider_service_id,
                 bookingInput.scheduled_at,
                 bookingInput.customer_location,
@@ -43,8 +44,15 @@ export const findBookingById = async(bookingId: string): Promise<Booking | null>
                 services.name as service_name,
                 provider_users.name as provider_name,
                 provider_users.id as provider_user_id,
-                reviews.id as review_id
+                reviews.id as review_id,
+                pets.name AS pet_name,
+                pets.species AS pet_species,
+                pets.breed AS pet_breed,
+                pets.size AS pet_size,
+                pets.age_years AS pet_age_years,
+                pets.notes AS pet_notes
             FROM bookings
+            LEFT JOIN pets ON bookings.pet_id = pets.id
             LEFT JOIN users ON bookings.customer_id = users.id
             LEFT JOIN provider_services ON bookings.provider_service_id = provider_services.id
             LEFT JOIN services ON provider_services.service_id = services.id
@@ -103,15 +111,22 @@ export const fetchBookings = async(
                 services.name AS service_name,
                 provider_services.price,
                 provider_users.name AS provider_name,
-                customer_users.name AS customer_name
+                customer_users.name AS customer_name,
+                pets.name AS pet_name,
+                pets.species AS pet_species,
+                pets.breed AS pet_breed,
+                pets.size AS pet_size,
+                pets.age_years AS pet_age_years,
+                pets.notes AS pet_notes
             FROM bookings
+            LEFT JOIN pets ON bookings.pet_id = pets.id
             LEFT JOIN provider_services ON bookings.provider_service_id = provider_services.id
             LEFT JOIN services ON provider_services.service_id = services.id
             LEFT JOIN providers ON provider_services.provider_id = providers.id
             LEFT JOIN users AS provider_users ON providers.user_id = provider_users.id
             LEFT JOIN users AS customer_users ON bookings.customer_id = customer_users.id
             ${whereClause}
-            ORDER BY created_at DESC
+            ORDER BY bookings.created_at DESC
             LIMIT $${index++} OFFSET $${index}
             `,
             values
