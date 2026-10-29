@@ -14,7 +14,7 @@ const validateSource = (source: 'body' | 'query' | 'params') => (schema: ZodType
         if (!result.success) {
             res.status(400).json({
                 success: false,
-                message: 'Validation failed',
+                message: 'Dados inválidos',
                 errors: formatValidationErrors(result.error),
             })
             return

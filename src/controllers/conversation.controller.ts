@@ -11,10 +11,10 @@ export const createConversation = async(req:Request, res:Response) => {
     const user = req.user
     const { booking_id, provider_id } = req.body
     
-    if(!user) throw new AppError('Unauthenticated', 401)
+    if(!user) throw new AppError('Não autenticado', 401)
 
     if (provider_id === user.id || !await findProviderByUserId(provider_id)) {
-        throw new AppError('Invalid conversation provider', 400)
+        throw new AppError('Groomer da conversa inválido', 400)
     }
 
     let existingBooking:Booking | null
@@ -24,10 +24,10 @@ export const createConversation = async(req:Request, res:Response) => {
         existingBooking = await findBookingById(booking_id)
         
         if(!existingBooking){
-            throw new AppError('Booking not found', 404)
+            throw new AppError('Agendamento não encontrado', 404)
         }
         if (existingBooking.customer_id !== user.id || existingBooking.provider_user_id !== provider_id) {
-            throw new AppError('You are not associated with this booking', 403)
+            throw new AppError('Você não participa deste agendamento', 403)
         }
     }
 
@@ -35,7 +35,7 @@ export const createConversation = async(req:Request, res:Response) => {
     if (existingConvo.length > 0) {
         return res.status(200).json({ 
             success: true, 
-            message: 'Conversation already exists', 
+            message: 'A conversa já existe', 
             data: existingConvo[0] 
         })
     }
@@ -46,17 +46,17 @@ export const createConversation = async(req:Request, res:Response) => {
         provider_id
     })
 
-    res.status(201).json({success:true, message:"Conversation created successfully", data:conversation})
+    res.status(201).json({success:true, message:'Conversa criada com sucesso', data:conversation})
 }
 
 export const getUserConversations = async(req:Request, res:Response) => {
     const user = req.user
     const { limit, page } = req.query as unknown as PaginationQuerySchema
-    if (!user) throw new AppError('Unauthorized', 401)
+    if (!user) throw new AppError('Não autorizado', 401)
 
     const convos = await fetchUserConversations({ limit, page }, user.id)
 
-    res.status(200).json({success:true, message:'User conversations fetched successfully', data:convos})
+    res.status(200).json({success:true, message:'Conversas carregadas', data:convos})
 }
 
 export const getConversationMessages = async(req:Request, res:Response) => {
@@ -64,31 +64,31 @@ export const getConversationMessages = async(req:Request, res:Response) => {
     const { cursor_time, cursor_id, limit } = req.query as unknown as PaginationQuerySchema
     const user = req.user
 
-    if(!user) throw new AppError('Unauthenticated', 401)
+    if(!user) throw new AppError('Não autenticado', 401)
 
     const conversation = await findConversationById(conversationId)
-    if (!conversation) throw new AppError('Conversation not found', 404)
+    if (!conversation) throw new AppError('Conversa não encontrada', 404)
     
     if (conversation.customer_id !== user.id && conversation.provider_id !== user.id) {
-        throw new AppError('You are not part of this conversation', 403)
+        throw new AppError('Você não participa desta conversa', 403)
     }
     
     const convoMessages = await fetchMessages({ limit, cursor_time, cursor_id }, conversationId)
 
-    res.status(200).json({success:true, message:'Conversation messages fetched successfully', data:convoMessages})
+    res.status(200).json({success:true, message:'Mensagens carregadas', data:convoMessages})
 } 
 
 export const markConversationRead = async (req: Request, res: Response) => {
     const { conversationId } = req.params as unknown as ConversationIdParamSchema
     const user = req.user
-    if (!user) throw new AppError('Unauthenticated', 401)
+    if (!user) throw new AppError('Não autenticado', 401)
 
     const conversation = await findConversationById(conversationId)
-    if (!conversation) throw new AppError('Conversation not found', 404)
+    if (!conversation) throw new AppError('Conversa não encontrada', 404)
     if (conversation.customer_id !== user.id && conversation.provider_id !== user.id) {
-        throw new AppError('You are not part of this conversation', 403)
+        throw new AppError('Você não participa desta conversa', 403)
     }
 
     const updated = await markMessagesSeen(conversationId, user.id)
-    res.status(200).json({ success: true, message: 'Conversation marked as read', data: { updated } })
+    res.status(200).json({ success: true, message: 'Conversa marcada como lida', data: { updated } })
 }

@@ -2,12 +2,12 @@ import {z} from 'zod'
 import { BookingStatus } from '../types/booking.types'
 
 export const createBookingSchema = z.object({
-    provider_service_id: z.uuid('Invalid provider service id'),
+    provider_service_id: z.uuid('Serviço do groomer inválido'),
     scheduled_at: z.iso.datetime().refine(
         date => new Date(date) > new Date(),
-        {message: 'Scheduled date must be in the future'}
+        {message: 'A data deve estar no futuro'}
     ),
-    customer_location: z.string().min(1,'Location is required'),
+    customer_location: z.string().min(1,'O local é obrigatório'),
     customer_latitude: z.number().min(-90).max(90).optional(),
     customer_longitude: z.number().min(-180).max(180).optional()
 })

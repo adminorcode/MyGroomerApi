@@ -16,7 +16,7 @@ export const registerUser = async (user:RegisterInput)=>{
         // check if email exists
         const existingEmail = await findUserByEmail(user.email)
         if (existingEmail){
-            throw new AppError('Email already in use.', 409)
+            throw new AppError('Este e-mail já está em uso.', 409)
         }
         // hash password
         const salt = await bcrypt.genSalt(10)
@@ -52,7 +52,7 @@ export const registerUser = async (user:RegisterInput)=>{
         // send verification email
         await sendEmailVerificationToken(email_token.token, user.email)
 
-        return {success:true, message:'User created successfully', email: user.email, requires_verification: !isLocalTestMode()}
+        return {success:true, message:'Conta criada com sucesso', email: user.email, requires_verification: !isLocalTestMode()}
     } catch (error) {
         throw error
     }
@@ -64,23 +64,23 @@ export const verifyEmail = async (token:string) => {
         const user = await findUserByVerificationToken(token)
     
         if (!user){
-            throw new AppError('User not found!', 404)
+            throw new AppError('Usuário não encontrado.', 404)
         }
 
         // check if token has expired
         if (!user.email_verification_token_expires_at) {
-            throw new AppError('Invalid verification token.', 400)
+            throw new AppError('Token de verificação inválido.', 400)
         }
 
         const is_token_expired = user.email_verification_token_expires_at < new Date()
 
         if(is_token_expired){
-            throw new AppError('Verification token has expired.', 400)
+            throw new AppError('O token de verificação expirou.', 400)
         }
     
         await verifyUserEmail(user.id)
 
-        return {success:true, message:'Email verified successfully'}
+        return {success:true, message:'E-mail verificado com sucesso'}
         
     } catch (error) {
         throw error
@@ -92,21 +92,21 @@ export const loginUser = async (email:string, user_password:string) => {
         const existingUser = await findUserByEmail(email)
 
         if (!existingUser){
-            throw new AppError('Invalid email or password', 401)
+            throw new AppError('E-mail ou senha inválidos', 401)
         }
 
         if (!existingUser.email_verified_at){
-            throw new AppError('Please verify your email before login.', 404)
+            throw new AppError('Verifique seu e-mail antes de entrar.', 404)
         }
 
         if (existingUser.google_id && !existingUser.password) {
-            throw new AppError('Please use Google to sign in', 400)
+            throw new AppError('Use o Google para entrar', 400)
         }
 
         const passwordMatch = await bcrypt.compare(user_password, existingUser.password as string)
 
         if (!passwordMatch){
-            throw new AppError('Invalid email or password!', 401)
+            throw new AppError('E-mail ou senha inválidos', 401)
         }
 
         const payload={
@@ -123,7 +123,7 @@ export const loginUser = async (email:string, user_password:string) => {
 
         return {
             success: true,
-            message: "User logged in successfully!",
+            message: 'Login realizado com sucesso',
             user:safeUser,
             token
         }
@@ -139,7 +139,7 @@ export const forgotPassword = async (email:string) => {
         const user = await findUserByEmail(email)
 
         if (!user){
-            throw new AppError('User not found!', 404)
+            throw new AppError('Usuário não encontrado.', 404)
         }
 
         // generate forgot password token
@@ -152,7 +152,7 @@ export const forgotPassword = async (email:string) => {
         await sendPasswordResetEmail(user.email, passwordToken.token)
 
         return {
-            success: true, message: 'Password reset email sent'
+            success: true, message: 'E-mail de redefinição de senha enviado'
         }
     } catch (error) {
         throw error
@@ -166,14 +166,14 @@ export const resetUserPassword = async (token:string, password:string)=>{
         const user = await findUserByForgotPasswordToken(hashed_token)
 
         if (!user || !user.forgot_password_token_expires_at){
-            throw new AppError('Invalid token!', 401)
+            throw new AppError('Token inválido.', 401)
         } 
 
         // check if the token has expired
         const is_token_expired = user.forgot_password_token_expires_at < new Date()
 
         if (is_token_expired){
-            throw new AppError('Token has expired!', 400)
+            throw new AppError('O token expirou.', 400)
         }
 
         // hash new password
@@ -184,7 +184,7 @@ export const resetUserPassword = async (token:string, password:string)=>{
 
         return { 
             success: true,
-            message: 'Password reset successfully'
+            message: 'Senha redefinida com sucesso'
         }
 
     } catch (error) {

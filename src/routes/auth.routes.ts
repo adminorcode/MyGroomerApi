@@ -10,7 +10,7 @@ const router = Router()
 
 router.use(['/google', '/google/callback'], (_req, res, next) => {
     if (!isGoogleAuthEnabled()) {
-        res.status(503).json({ success: false, message: 'Google sign-in is not enabled in this environment' })
+        res.status(503).json({ success: false, message: 'O login com Google não está habilitado neste ambiente' })
         return
     }
     next()

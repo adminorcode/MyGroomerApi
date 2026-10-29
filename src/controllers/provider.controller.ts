@@ -24,17 +24,17 @@ export const createProviderService = async (req: Request, res: Response) => {
     const providerServiceData: Omit<CreateProviderService, 'provider_id'> = req.body
 
     if(!req.user){
-        throw new AppError('Unauthorized!', 401)
+        throw new AppError('Não autorizado', 401)
     }
 
     if (!providerServiceData.service_id || providerServiceData.price === undefined) {
-        throw new AppError('Missing required fields', 400)
+        throw new AppError('Campos obrigatórios ausentes', 400)
     }
 
     const provider = await findProviderByUserId(req.user.id)
 
     if(!provider){
-        throw new AppError('Provider profile not found', 404)
+        throw new AppError('Perfil do groomer não encontrado', 404)
     }
 
     const createdProviderService = await insertProviderService(provider.id, providerServiceData)
@@ -50,13 +50,13 @@ export const getProviderServiceById = async (req: Request, res: Response) => {
     const { providerServiceId } = req.params
 
     if (!providerServiceId || typeof providerServiceId !== 'string') {
-        throw new AppError('Invalid id!', 400)
+        throw new AppError('Identificador inválido', 400)
     }
 
     const providerService = await findProviderServiceByIdWithProviderDetails(providerServiceId)
 
     if (!providerService) {
-        throw new AppError('Provider service not found', 404)
+        throw new AppError('Serviço do groomer não encontrado', 404)
     }
 
     res.status(200).json({
@@ -68,7 +68,7 @@ export const getProviderServiceById = async (req: Request, res: Response) => {
 // Get Provider Services (with pagination/search)
 export const getProviderServices = async (req: Request, res: Response) => {
     if (!req.user) {
-        throw new AppError('Unauthorized!', 401)
+        throw new AppError('Não autorizado', 401)
     }
 
     const { providerId } = req.query
@@ -83,7 +83,7 @@ export const getProviderServices = async (req: Request, res: Response) => {
     if (!providerIdToUse) {
         const provider = await findProviderByUserId(req.user.id)
         if (!provider) {
-            throw new AppError('Provider profile not found', 404)
+            throw new AppError('Perfil do groomer não encontrado', 404)
         }
         providerIdToUse = provider.id
     }
@@ -104,7 +104,7 @@ export const getServiceProviders = async (req: Request, res: Response) => {
     const { serviceId } = req.params
 
     if (!serviceId || typeof serviceId !== 'string') {
-        throw new AppError('Invalid service id', 400)
+        throw new AppError('Serviço inválido', 400)
     }
 
     const providers = await fetchServiceProviders(serviceId)
@@ -118,28 +118,28 @@ export const getServiceProviders = async (req: Request, res: Response) => {
 // Update a Provider Service
 export const updateProviderService = async (req: Request, res: Response) => {
     if(!req.user){
-        throw new AppError('Unauthorized!', 401)
+        throw new AppError('Não autorizado', 401)
     }
 
     const provider = await findProviderByUserId(req.user.id)
 
     if(!provider){
-        throw new AppError('Provider not found', 404)
+        throw new AppError('Groomer não encontrado', 404)
     }
 
     const { providerServiceId } = req.params
     const updateData: CreateProviderService = req.body
 
     if (!providerServiceId || typeof providerServiceId !== 'string') {
-        throw new AppError('Invalid id!', 400)
+        throw new AppError('Identificador inválido', 400)
     }
 
     const existing = await findProviderServiceById(providerServiceId)
-    if (!existing) throw new AppError('Provider service not found', 404)
+    if (!existing) throw new AppError('Serviço do groomer não encontrado', 404)
 
     // check if the provider is the owner of the service
     if(existing.provider_id !== provider.id){
-        throw new AppError('Unauthorized!', 401)
+        throw new AppError('Não autorizado', 401)
     }
 
     const updated = await modifyProviderService(
@@ -158,23 +158,23 @@ export const removeProviderService = async(req:Request, res:Response) => {
     const {providerServiceId} = req.params
 
     if(!providerServiceId || typeof providerServiceId != 'string'){
-        throw new AppError('Invalid id!', 400)
+        throw new AppError('Identificador inválido', 400)
     }
 
-    if (!req.user) throw new AppError('Unauthorized', 401)
+    if (!req.user) throw new AppError('Não autorizado', 401)
     const provider = await findProviderByUserId(req.user.id)
     const existing = await findProviderServiceById(providerServiceId)
-    if (!existing) throw new AppError('Provider service not found', 404)
-    if (!provider || provider.id !== existing.provider_id) throw new AppError('You do not own this service', 403)
+    if (!existing) throw new AppError('Serviço do groomer não encontrado', 404)
+    if (!provider || provider.id !== existing.provider_id) throw new AppError('Este serviço não é seu', 403)
     const result = await deleteProviderService(providerServiceId)
 
     if(!result){
-        throw new AppError('Provider service not found', 404)
+        throw new AppError('Serviço do groomer não encontrado', 404)
     }
 
     res.status(200).json({
         success:true,
-        message:'Provider service deleted successfully'
+        message:'Serviço removido'
     })
 }
 
@@ -183,25 +183,25 @@ export const registerAsProvider = async (req: Request, res: Response) => {
     const providerData: Omit<CreateProvider, 'user_id'> = req.body
 
     if (!user) {
-        throw new AppError('Unauthorized!', 401)
+        throw new AppError('Não autorizado', 401)
     }
     
     const existingProvider = await findProviderByUserId(user.id)
     if (existingProvider) {
-        throw new AppError('Already registered as a provider', 409)
+        throw new AppError('Você já está cadastrado como groomer', 409)
     }
 
     if (!providerData.payout_method) {
-        throw new AppError('Missing required fields', 400)
+        throw new AppError('Campos obrigatórios ausentes', 400)
     }
 
     if (providerData.payout_method === PayoutMethod.MOBILE_MONEY) {
         if (!providerData.momo_number || !providerData.momo_provider) {
-            throw new AppError('momo_number and momo_provider are required for mobile money payout', 400)
+            throw new AppError('Informe o número e a operadora do dinheiro móvel', 400)
         }
     } else if (providerData.payout_method === PayoutMethod.BANK) {
         if (!providerData.bank_account_name || !providerData.bank_account_number) {
-            throw new AppError('bank_account_name and bank_account_number are required for bank payout', 400)
+            throw new AppError('Informe o nome e o número da conta bancária', 400)
         }
     }
     
@@ -211,14 +211,14 @@ export const registerAsProvider = async (req: Request, res: Response) => {
     })
 
     if (!createdProvider) {
-        throw new AppError('Failed to register as provider', 500)
+        throw new AppError('Não foi possível concluir o cadastro de groomer', 500)
     }
 
     // update user role
     const update = await updateUser(user.id, {role: Role.PROVIDER})
 
     if(!update){
-        throw new AppError('Failed to update user role', 500)
+        throw new AppError('Não foi possível atualizar o perfil', 500)
     }
 
     // update jwt token provided for authenticated user
@@ -238,7 +238,7 @@ export const registerAsProvider = async (req: Request, res: Response) => {
 }
 
 export const getProviderEarnings = async (req:Request, res:Response) => {
-    if (!req.user) throw new AppError('Unauthorized', 401)
+    if (!req.user) throw new AppError('Não autorizado', 401)
 
     const transactions = await fetchProviderTransactions(req.user.id)
     
