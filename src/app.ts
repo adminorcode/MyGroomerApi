@@ -1,12 +1,12 @@
 import express from "express"
 import cors from 'cors'
 import helmet from 'helmet'
-import { errorHandler } from "./middlewares/errorHandler"
+import { errorHandler } from "./shared/http/error-handler"
 import appRoutes from './routes/index'
 import passport from "passport"
-import './config/passport.config'
+import './integrations/google/passport'
 import { generalLimiter } from "./config/rateLimit.config"
-import { morganMiddleware } from "./middlewares/morgan.middleware"
+import { morganMiddleware } from "./shared/http/morgan.middleware"
 import { isGoogleAuthEnabled, isLocalTestMode } from './config/runtime.config'
 
 

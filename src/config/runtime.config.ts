@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { AppError } from '../middlewares/errorHandler'
+import { AppError } from '../shared/errors'
 
 export const isLocalTestMode = (): boolean => {
     const enabled = process.env.LOCAL_TEST_MODE === 'true'
