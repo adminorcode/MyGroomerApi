@@ -2,6 +2,7 @@ import {z} from 'zod'
 import { BookingStatus } from '../types/booking.types'
 
 export const createBookingSchema = z.object({
+    pet_id: z.uuid('Selecione um pet'),
     provider_service_id: z.uuid('Serviço do groomer inválido'),
     scheduled_at: z.iso.datetime().refine(
         date => new Date(date) > new Date(),

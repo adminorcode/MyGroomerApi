@@ -7,7 +7,7 @@ const { io } = require('socket.io-client')
 const base = 'http://127.0.0.1:3000/api/v1'
 const id = n => `10000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const pool = new Pool({ connectionString:process.env.DATABASE_URL })
-const created = { users:[], bookings:[], messages:[], offers:[] }
+const created = { users:[], bookings:[], messages:[], offers:[], pets:[] }
 const password = 'LocalTest#2026'
 let tutor, groomer, outsider
 
@@ -47,6 +47,7 @@ before(async () => {
 after(async () => {
     if(created.messages.length) await pool.query('DELETE FROM messages WHERE id=ANY($1::uuid[])',[created.messages])
     if(created.bookings.length) await pool.query('DELETE FROM bookings WHERE id=ANY($1::uuid[])',[created.bookings])
+    if(created.pets.length) await pool.query('DELETE FROM pets WHERE id=ANY($1::uuid[])',[created.pets])
     if(created.offers.length) await pool.query('DELETE FROM provider_services WHERE id=ANY($1::uuid[])',[created.offers])
     if(created.users.length) await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])',[created.users])
     await pool.end()
@@ -54,7 +55,7 @@ after(async () => {
 
 test('schema is migrated and demonstration screens have data',async()=>{
     const migrations=await pool.query('SELECT name FROM schema_migrations ORDER BY name')
-    assert.equal(migrations.rowCount,4)
+    assert.equal(migrations.rowCount,5)
     for(const [route,token] of [['/categories',tutor],['/bookings',tutor],['/bookings?as=provider',groomer],['/conversations',tutor],['/providers',groomer]]) {
         const result=await request(route,'GET',undefined,token)
         assert.equal(result.status,200,route)
@@ -102,12 +103,73 @@ test('registration and private resources reject unauthorized access',async()=>{
     assert.equal((await request('/conversations','POST',{booking_id:id(20),provider_id:id(2)},outsider)).status,403)
 })
 
+test('tutor pet is private, optional photo is omitted, and a saved pet is reused',async()=>{
+    const tutorUser=await pool.query("SELECT id FROM users WHERE email='tutor@mygroomer.test'")
+    const payload={name:'Rex integração',species:'dog',breed:'SRD',size:'medium',age_years:4,notes:'Medo de secador'}
+    const invalid=await request('/pets','POST',{name:'',species:'bird',breed:'',size:'huge',age_years:-1,notes:'x'.repeat(501)},tutor)
+    assert.equal(invalid.status,400)
+    for (const field of ['name','species','breed','size','age_years','notes']) {
+        assert.ok(invalid.body.errors.some(issue=>issue.field===field), field)
+    }
+    assert.equal((await request('/pets')).status,401)
+    assert.equal((await request('/pets','GET',undefined,groomer)).status,403)
+    assert.equal((await request('/pets','POST',payload,groomer)).status,403)
+    const saved=await request('/pets','POST',payload,tutor)
+    assert.equal(saved.status,201)
+    const pet=saved.body.data
+    created.pets.push(pet.id)
+    assert.equal(pet.photo_url,null)
+    assert.equal(pet.owner_id,tutorUser.rows[0].id)
+    assert.equal(pet.species,'dog')
+    assert.equal(pet.breed,'SRD')
+    assert.equal(pet.size,'medium')
+    assert.equal(pet.age_years,4)
+    assert.equal(pet.notes,'Medo de secador')
+    const stored=await pool.query('SELECT photo_url, owner_id FROM pets WHERE id=$1',[pet.id])
+    assert.equal(stored.rows[0].photo_url,null)
+    assert.equal(stored.rows[0].owner_id,tutorUser.rows[0].id)
+    const ownList=await request('/pets','GET',undefined,tutor)
+    assert.equal(ownList.status,200)
+    assert.ok(ownList.body.data.some(item=>item.id===pet.id))
+    const hidden=await request('/pets','GET',undefined,outsider)
+    assert.equal(hidden.status,200)
+    assert.equal(hidden.body.data.some(item=>item.id===pet.id),false)
+    assert.equal((await request('/pets/'+pet.id,'GET',undefined,outsider)).status,404)
+    assert.equal((await request('/pets/'+pet.id,'PATCH',{...payload,notes:'alterado por outro'},outsider)).status,404)
+    assert.equal((await pool.query('SELECT notes FROM pets WHERE id=$1',[pet.id])).rows[0].notes,'Medo de secador')
+    const updated=await request('/pets/'+pet.id,'PATCH',{...payload,notes:'Tosa na tesoura'},tutor)
+    assert.equal(updated.status,200)
+    assert.equal(updated.body.data.notes,'Tosa na tesoura')
+    assert.equal(updated.body.data.photo_url,null)
+    const scheduledAt=new Date(Date.now()+86400000*8).toISOString()
+    const bookingBody={pet_id:pet.id,provider_service_id:id(10),scheduled_at:scheduledAt,customer_location:'Integration test address'}
+    assert.equal((await request('/bookings','POST',{provider_service_id:id(10),scheduled_at:scheduledAt,customer_location:'Integration test address'},tutor)).status,400)
+    assert.equal((await request('/bookings','POST',bookingBody,outsider)).status,404)
+    const before=await pool.query('SELECT count(*)::int AS total FROM pets WHERE owner_id=$1',[tutorUser.rows[0].id])
+    const first=await request('/bookings','POST',bookingBody,tutor)
+    const second=await request('/bookings','POST',{...bookingBody,scheduled_at:new Date(Date.now()+86400000*9).toISOString()},tutor)
+    assert.equal(first.status,201)
+    assert.equal(second.status,201)
+    created.bookings.push(first.body.data.booking.id,second.body.data.booking.id)
+    assert.equal(first.body.data.booking.pet_id,pet.id)
+    assert.equal(second.body.data.booking.pet_id,pet.id)
+    const after=await pool.query('SELECT count(*)::int AS total FROM pets WHERE owner_id=$1',[tutorUser.rows[0].id])
+    assert.equal(after.rows[0].total,before.rows[0].total)
+    const detail=await request('/bookings/'+first.body.data.booking.id,'GET',undefined,tutor)
+    assert.equal(detail.body.data.pet_name,'Rex integração')
+    assert.equal(detail.body.data.pet_notes,'Tosa na tesoura')
+})
+
 test('local booking can be confirmed and cancelled without any payment',async()=>{
+    const pet=await request('/pets','POST',{name:'Pet do agendamento',species:'cat',breed:'SRD',size:'small',age_years:2},tutor)
+    assert.equal(pet.status,201)
+    created.pets.push(pet.body.data.id)
     const scheduledAt=new Date(Date.now()+86400000*7).toISOString()
-    const result=await request('/bookings','POST',{provider_service_id:id(10),scheduled_at:scheduledAt,customer_location:'Integration test address'},tutor)
+    const result=await request('/bookings','POST',{pet_id:pet.body.data.id,provider_service_id:id(10),scheduled_at:scheduledAt,customer_location:'Integration test address'},tutor)
     assert.equal(result.status,201)
     const booking=result.body.data.booking
     created.bookings.push(booking.id)
+    assert.equal(booking.pet_id, pet.body.data.id)
     assert.equal(booking.scheduled_at, scheduledAt, 'Scheduled instant must round-trip without a timezone shift')
     assert.equal(result.body.data.payment_mode,'disabled')
     assert.equal(result.body.data.authorization_url,null)

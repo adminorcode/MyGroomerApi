@@ -10,6 +10,13 @@ export enum BookingStatus {
 export interface Booking{
     id:string
     customer_id:string
+    pet_id?: string | null
+    pet_name?: string | null
+    pet_species?: string | null
+    pet_breed?: string | null
+    pet_size?: string | null
+    pet_age_years?: number | null
+    pet_notes?: string | null
     provider_service_id:string
     scheduled_at:Date
     booking_status: BookingStatus
@@ -29,6 +36,7 @@ export interface Booking{
 
 export type CreateBookingInput = {
     customer_id:string
+    pet_id:string
     provider_service_id:string
     scheduled_at:Date
     customer_location:string
