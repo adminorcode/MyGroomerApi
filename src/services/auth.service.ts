@@ -31,7 +31,8 @@ export const registerUser = async (user:RegisterInput)=>{
             password: hashed_password,
             email_verification_token: isLocalTestMode() ? undefined : email_token.token,
             email_verification_token_expires_at: isLocalTestMode() ? undefined : email_token.expiry,
-            email_verified_at: isLocalTestMode() ? new Date() : undefined
+            email_verified_at: isLocalTestMode() ? new Date() : undefined,
+            terms_accepted_at: user.accepted_terms === true ? new Date() : undefined
         })
 
         // If role is provider, insert provider row
@@ -152,7 +153,9 @@ export const forgotPassword = async (email:string) => {
         await sendPasswordResetEmail(user.email, passwordToken.token)
 
         return {
-            success: true, message: 'E-mail de redefinição de senha enviado'
+            success: true,
+            message: 'E-mail de redefinição de senha enviado',
+            ...(isLocalTestMode() ? { reset_token: passwordToken.token } : {})
         }
     } catch (error) {
         throw error

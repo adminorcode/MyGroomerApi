@@ -23,7 +23,8 @@ export interface User{
     email_verified_at?:Date
     forgot_password_token?:string
     email_verification_token_expires_at?:Date
-    forgot_password_token_expires_at?:Date 
+    forgot_password_token_expires_at?:Date
+    terms_accepted_at?:Date
 }
 
 
@@ -44,6 +45,7 @@ export type CreateUserInput = {
     profile_picture?:string
     google_id?:string
     phone_number?:string
+    terms_accepted_at?:Date
     email_verification_token?:string
     email_verification_token_expires_at?:Date
     email_verified_at?:Date
@@ -54,6 +56,7 @@ type RegisterBase = {
     email: string
     password: string
     phone_number?: string
+    accepted_terms?: boolean
     address?: string
     profile_picture?: string
 }

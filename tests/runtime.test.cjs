@@ -56,6 +56,21 @@ test('public registration cannot request admin', () => {
     assert.equal(registerAuthSchema.safeParse({name:'Test',email:'admin@example.test',password:'LocalTest#2026',role:'admin'}).success, false)
 })
 
+test('tutor registration requires a valid phone and explicit consent', () => {
+    const { registerAuthSchema } = require('../dist/validators/auth.validator')
+    const password = 'LocalTest#2026'
+    const base = { name:'Tutor', email:'tutor-new@example.test', password, role:'customer' }
+    assert.equal(registerAuthSchema.safeParse(base).success, false)
+    assert.equal(registerAuthSchema.safeParse({ ...base, phone_number:'+5511987654321' }).success, false)
+    assert.equal(registerAuthSchema.safeParse({ ...base, phone_number:'11987654321', accepted_terms:true }).success, false)
+    assert.equal(registerAuthSchema.safeParse({ ...base, phone_number:'+5511987654321', accepted_terms:false }).success, false)
+    assert.equal(registerAuthSchema.safeParse({ ...base, phone_number:'+5511987654321', accepted_terms:true }).success, true)
+    assert.equal(registerAuthSchema.safeParse({
+        name:'Groomer', email:'groomer-new@example.test', password, role:'provider',
+        payout_method:'mobile_money', momo_number:'+233200000000', momo_provider:'mtn', service_area:'Pinheiros'
+    }).success, true)
+})
+
 test('offer updates reject nonpositive prices and ownership changes', () => {
     const { updateProviderServiceSchema } = require('../dist/validators/provider.validator')
     assert.equal(updateProviderServiceSchema.safeParse({price:-1}).success, false)
