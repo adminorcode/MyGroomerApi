@@ -7,9 +7,11 @@ import { CreatePaymentInput, PaymentStatus } from "../types/payment.types"
 import { findBookingById, updateBookingStatus } from "../services/booking.service"
 import crypto from 'crypto'
 import { BookingStatus } from "../types/booking.types"
+import { assertPaymentsEnabled } from '../config/runtime.config'
 
 
 export const initializePayment = async (req:Request, res:Response) => {
+    assertPaymentsEnabled()
     const {booking_id} = req.body
     
     if(!booking_id) {
@@ -71,6 +73,7 @@ export const initializePayment = async (req:Request, res:Response) => {
 
 
 export const webhookHandler = async (req:Request, res:Response)=>{
+    assertPaymentsEnabled()
     const hash = crypto
     .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY!)
     .update(req.body)  // raw buffer, not parsed JSON

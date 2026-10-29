@@ -11,7 +11,7 @@ import {
     getProviderEarnings
 } from "../controllers/provider.controller";
 import { validate } from "../middlewares/validate.middleware";
-import { addProviderServiceSchema, registerProviderSchema } from "../validators/provider.validator";
+import { addProviderServiceSchema, registerProviderSchema, updateProviderServiceSchema } from "../validators/provider.validator";
 
 const router = Router()
 
@@ -29,7 +29,7 @@ router.get('/:providerServiceId', authenticate, getProviderServiceById)
 
 router.get('/', authenticate, getProviderServices)
 
-router.patch('/:providerServiceId', authenticate, updateProviderService)
+router.patch('/:providerServiceId', authenticate, validate(updateProviderServiceSchema), updateProviderService)
 
 router.delete('/:providerServiceId', authenticate, removeProviderService)
 

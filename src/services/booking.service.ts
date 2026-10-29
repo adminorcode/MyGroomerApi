@@ -4,7 +4,7 @@ import { Booking, BookingStatus, CreateBookingInput } from "../types/booking.typ
 import { QueryType } from "../types/pagination.types";
 
 
-export const insertBooking = async(bookingInput: CreateBookingInput): Promise<Booking | null> => {
+export const insertBooking = async(bookingInput: CreateBookingInput, initialStatus = BookingStatus.PENDING_PAYMENT): Promise<Booking | null> => {
     try {
         const pool = getPool();
         const result = await pool.query(
@@ -20,7 +20,7 @@ export const insertBooking = async(bookingInput: CreateBookingInput): Promise<Bo
                 bookingInput.provider_service_id,
                 bookingInput.scheduled_at,
                 bookingInput.customer_location,
-                BookingStatus.PENDING_PAYMENT,
+                initialStatus,
                 bookingInput.customer_latitude,
                 bookingInput.customer_longitude
             ]

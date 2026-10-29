@@ -2,7 +2,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict RvkuRnL9CPUYWRQ3ghRR33IxqCSzQ49XmscKwY91iug8Wdh1R2el83JyybyMcWB
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.6
@@ -10,7 +9,7 @@
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
+
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -593,7 +592,7 @@ ALTER TABLE ONLY public.transactions
 --
 
 ALTER TABLE ONLY public.transactions
-    ADD CONSTRAINT transactions_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.users(id) ON DELETE SET NULL;
+    ADD CONSTRAINT transactions_customer_id_fkey FOREIGN KEY (customer_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -616,4 +615,4 @@ ALTER TABLE ONLY public.transactions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict RvkuRnL9CPUYWRQ3ghRR33IxqCSzQ49XmscKwY91iug8Wdh1R2el83JyybyMcWB
+

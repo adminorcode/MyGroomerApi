@@ -1,108 +1,75 @@
-import { Server } from "socket.io";
-import { Server as HttpServer } from "http";
-import { logger } from "./logger.config";
-import { verifyToken } from "../utils/jwt.utils";
-import { fetchUserConversations, findConversationById, updateMessage } from "../services/conversation.service";
-import { insertMessage } from "../services/conversation.service";
+import { Server } from 'socket.io'
+import { Server as HttpServer } from 'http'
+import { z } from 'zod'
+import { logger } from './logger.config'
+import { verifyToken } from '../utils/jwt.utils'
+import { fetchUserConversations, findConversationById, insertMessage, markMessagesSeen } from '../services/conversation.service'
 
-let io:Server
+const conversationInput = z.object({ conversation_id: z.uuid() })
+const messageInput = conversationInput.extend({ content: z.string().trim().min(1).max(4000) })
+const respond = (ack: unknown, result: unknown) => {
+    if (typeof ack === 'function') ack(result)
+}
 
-export const initializeSocket = (httpServer:HttpServer) => {
-    io = new Server(httpServer, {
-        cors:{
-            origin: '*',
-            methods: ['GET', 'POST']
-        }
-    })
-
-    // authentication middleware
-    io.use(async (socket, next) => {
+export const initializeSocket = (httpServer: HttpServer) => {
+    const io = new Server(httpServer, { cors: { origin: '*', methods: ['GET', 'POST'] } })
+    io.use((socket, next) => {
         try {
             const token = socket.handshake.auth.token || socket.handshake.headers.authorization
-            if(!token) return next(new Error('Authentication required'))
-            
-            const tokenString = typeof token === 'string' 
-            ? token.replace('Bearer ', '')
-            : ''
-
-            const payload = verifyToken(tokenString)
-            socket.data.user = payload
+            if (typeof token !== 'string') throw new Error('Authentication required')
+            socket.data.user = verifyToken(token.replace(/^Bearer /, ''))
             next()
-        } catch (error) {
+        } catch {
             next(new Error('Invalid token'))
         }
     })
 
-    io.on('connect', async(socket)=>{
+    io.on('connection', socket => {
         const user = socket.data.user
-        logger.info(`User connected: ${user.id}`)
-
-        // join all conversation rooms
-        const conversations = await fetchUserConversations(
-            {page: 1, limit: 100},
-            user.id
-        )
-        conversations.forEach(convo => {
-            socket.join(`conversation_${convo.id}`)
-        })
-        logger.info(`User ${user.id} joined ${conversations.length} conversation rooms`)
-
-        // join a specific conversation room (for newly-created conversations)
-        socket.on('join_conversation',async ({ conversation_id }) => {
-            if (!conversation_id) return
-            const conversation = await findConversationById(conversation_id)
-            if (!conversation) return
-            if (conversation.customer_id !== user.id && conversation.provider_id !== user.id) {
-                return  // not a participant — don't join
+        socket.join(`user_${user.id}`)
+        const authorize = async (id: string) => {
+            const conversation = await findConversationById(id)
+            if (!conversation || ![conversation.customer_id, conversation.provider_id].includes(user.id)) {
+                throw new Error('You are not part of this conversation')
             }
-            socket.join(`conversation_${conversation_id}`)
-            logger.info(`User ${user.id} joined conversation_${conversation_id}`)
-        })
-
-        // handle send_message event
-        socket.on('send_message', async (data)=>{
-            logger.debug('send_message', { data })
+            return conversation
+        }
+        const fail = (error: unknown, ack?: unknown) => {
+            const message = error instanceof Error ? error.message : 'Message operation failed'
+            socket.emit('error', { message })
+            respond(ack, { success: false, message })
+        }
+        socket.on('join_conversation', async (data, ack) => {
             try {
-                const {conversation_id, content} = data
-
-                if (!conversation_id || !content){
-                    socket.emit('error', {message: 'Missing conversation_id or content'})
-                    return
-                }
-
-                // save message to database
-                const message = await insertMessage({
-                    content,
-                    conversation_id,
-                    sender_id: user.id
+                const input = conversationInput.parse(data)
+                await authorize(input.conversation_id)
+                await socket.join(`conversation_${input.conversation_id}`)
+                respond(ack, { success: true })
+            } catch (error) { fail(error, ack) }
+        })
+        socket.on('send_message', async (data, ack) => {
+            try {
+                const input = messageInput.parse(data)
+                const conversation = await authorize(input.conversation_id)
+                const message = await insertMessage({ ...input, sender_id: user.id })
+                io.to(`user_${conversation.customer_id}`).to(`user_${conversation.provider_id}`).emit('new_message', message)
+                respond(ack, { success: true, data: message })
+            } catch (error) { fail(error, ack) }
+        })
+        socket.on('message_seen', async (data, ack) => {
+            try {
+                const input = conversationInput.parse(data)
+                const conversation = await authorize(input.conversation_id)
+                await markMessagesSeen(input.conversation_id, user.id)
+                io.to(`user_${conversation.customer_id}`).to(`user_${conversation.provider_id}`).emit('message_seen', {
+                    conversation_id: input.conversation_id, seen_by: user.id
                 })
-
-                // emit to everyone in the conversation room including sender
-                io.to(`conversation_${conversation_id}`).emit('new_message', message)
-            } catch (error) {
-                logger.error('send_message error', { error })
-                socket.emit('error', {message: 'Failed to send message'})
-            }
+                respond(ack, { success: true })
+            } catch (error) { fail(error, ack) }
         })
-
-        // handle message_seen event
-        socket.on('message_seen', async(data)=>{
-            const {conversation_id, is_seen, message_id} = data
-
-            await updateMessage({is_seen}, message_id)
-
-            // mark messages as seen TODO: add later
-            io.to(`conversation_${conversation_id}`).emit('message_seen', {
-                conversation_id,
-                seen_by: user.id
-            })
-        })
-
-        // handle socket disconnect
-        socket.on('disconnect', ()=>{
-            logger.info(`User disconnected: ${user.id}`)
-        })
+        fetchUserConversations({ page: 1, limit: 100 }, user.id)
+            .then(conversations => conversations.forEach(conversation => socket.join(`conversation_${conversation.id}`)))
+            .catch(error => logger.error('Could not join conversation rooms', { message: error.message }))
     })
-
     return io
 }

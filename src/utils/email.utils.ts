@@ -1,7 +1,9 @@
 import { Resend } from "resend"
 import { AppError } from "../middlewares/errorHandler"
+import { isLocalTestMode } from '../config/runtime.config'
 
 export const sendEmail = async (email:string, content:{subject:string, html:string}) => {
+    if (isLocalTestMode()) return { id: 'local-test-email-not-sent' }
     const resend = new Resend(process.env.RESEND_API_KEY)
 
     const to = process.env.NODE_ENV === 'production'

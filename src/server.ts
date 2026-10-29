@@ -1,4 +1,4 @@
-import {config} from 'dotenv'
+import 'dotenv/config'
 import { logger } from './config/logger.config'
 import { createApp } from "./app"
 import { connectDB } from './config/database.config'
@@ -9,8 +9,9 @@ import { startPayoutCronJob } from './jobs/payout.job'
 import { createServer } from 'http'
 import { initializeSocket } from './config/socket.config'
 import { connectRedis } from './config/redis.config'
+import { isLocalTestMode, validateRuntime } from './config/runtime.config'
 
-config()
+validateRuntime()
 initializePassport()
 
 const startServer = async () => {
@@ -26,12 +27,19 @@ const startServer = async () => {
     await connectDB()
     await connectRedis()
     await connectRabbitMQ()
-    await startPayoutWorker()
-    startPayoutCronJob()
+    if (!isLocalTestMode()) {
+        await startPayoutWorker()
+        startPayoutCronJob()
+    } else {
+        logger.info('Local test mode: email, Google OAuth, payments and payout jobs are disabled')
+    }
 
-    httpServer.listen(Number(port), '0.0.0.0', ()=> {
+    httpServer.listen(Number(port), process.env.HOST || (isLocalTestMode() ? '127.0.0.1' : '0.0.0.0'), ()=> {
         logger.info(`Server is running on port ${Number(port)}`)
     })
 }
 
-startServer()
+startServer().catch(error => {
+    logger.error('Server startup failed', { message: error.message })
+    process.exit(1)
+})

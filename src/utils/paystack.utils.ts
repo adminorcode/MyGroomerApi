@@ -2,10 +2,12 @@ import axios from "axios"
 import { logger } from "../config/logger.config"
 import { AppError } from "../middlewares/errorHandler"
 import { InitiateTransfer, PaystackInitialize, TransferRecipient } from "../types/paystack.types"
+import { assertPaymentsEnabled } from '../config/runtime.config'
 
 
 
 export const initializePaystackPayment = async (email:string, amount:number, reference:string, callback_url?:string):Promise<PaystackInitialize> => {
+    assertPaymentsEnabled()
     try {
         const initialize  = await axios.post(`https://api.paystack.co/transaction/initialize`, 
             {   
@@ -30,6 +32,7 @@ export const initializePaystackPayment = async (email:string, amount:number, ref
 }
 
 export const verifyPaystackPayment = async (reference:string):Promise<{data:{status:string}}> => {
+    assertPaymentsEnabled()
     try {
         const verify = await axios.get(`https://api.paystack.co/transaction/verify/${reference}`,{
             headers:{
@@ -43,6 +46,7 @@ export const verifyPaystackPayment = async (reference:string):Promise<{data:{sta
 }
 
 export const refundPaystackPayment = async (reference: string, amount: number) => {
+    assertPaymentsEnabled()
     try {
         const refund = await axios.post(
             'https://api.paystack.co/refund',
@@ -65,6 +69,7 @@ export const refundPaystackPayment = async (reference: string, amount: number) =
 
 
 export const createPaystackTransferRecipient = async (recipient:TransferRecipient):Promise<string> => {
+    assertPaymentsEnabled()
     try {
         const transfer = await axios.post('https://api.paystack.co/transferrecipient', 
             {
@@ -87,6 +92,7 @@ export const createPaystackTransferRecipient = async (recipient:TransferRecipien
 }
 
 export const initiatePaystackTransfer = async (transfer:InitiateTransfer) => {
+    assertPaymentsEnabled()
     try{
         const result = await axios.post('https://api.paystack.co/transfer', 
             {

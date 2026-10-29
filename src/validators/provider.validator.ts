@@ -56,6 +56,10 @@ export const registerProviderSchema = z.object({
 
 export const addProviderServiceSchema = z.object({
     service_id: z.uuid('Invalid service id'),
-    price: z.number()
+    price: z.number().positive()
 })
+
+export const updateProviderServiceSchema = z.object({
+    price: z.number().positive()
+}).strict()
 

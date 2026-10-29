@@ -7,6 +7,7 @@ import passport from "passport"
 import './config/passport.config'
 import { generalLimiter } from "./config/rateLimit.config"
 import { morganMiddleware } from "./middlewares/morgan.middleware"
+import { isGoogleAuthEnabled, isLocalTestMode } from './config/runtime.config'
 
 
 
@@ -30,6 +31,14 @@ export const createApp = () => {
 
     app.get('/health' ,(req, res)=> {
         res.send('Ok')
+    })
+
+    app.get('/api/v1/runtime', (_req, res) => {
+        res.json({ success: true, data: {
+            localTest: isLocalTestMode(),
+            googleAuthEnabled: isGoogleAuthEnabled(),
+            paymentsEnabled: !isLocalTestMode()
+        } })
     })
 
     app.use('/api/v1', appRoutes)

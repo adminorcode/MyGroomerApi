@@ -4,6 +4,7 @@ import { findBookingById } from "../services/booking.service";
 import { fetchMessages, fetchUserConversations, findConversationById, findConversationsBetweenUsers, insertConversation, markMessagesSeen } from "../services/conversation.service";
 import { Booking } from "../types/booking.types";
 import type { ConversationIdParamSchema, PaginationQuerySchema } from "../validators/conversation.validator";
+import { findProviderByUserId } from '../services/provider.service';
 
 
 export const createConversation = async(req:Request, res:Response) => {
@@ -11,6 +12,10 @@ export const createConversation = async(req:Request, res:Response) => {
     const { booking_id, provider_id } = req.body
     
     if(!user) throw new AppError('Unauthenticated', 401)
+
+    if (provider_id === user.id || !await findProviderByUserId(provider_id)) {
+        throw new AppError('Invalid conversation provider', 400)
+    }
 
     let existingBooking:Booking | null
 
@@ -20,6 +25,9 @@ export const createConversation = async(req:Request, res:Response) => {
         
         if(!existingBooking){
             throw new AppError('Booking not found', 404)
+        }
+        if (existingBooking.customer_id !== user.id || existingBooking.provider_user_id !== provider_id) {
+            throw new AppError('You are not associated with this booking', 403)
         }
     }
 

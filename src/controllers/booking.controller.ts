@@ -9,6 +9,7 @@ import { initializePaystackPayment, refundPaystackPayment } from "../utils/payst
 import { findProviderServiceById } from "../services/provider.service";
 import { CANCELLATION_FEE_RATE } from "../constants";
 import { logger } from "../config/logger.config";
+import { isLocalTestMode } from '../config/runtime.config';
 
 
 export const createBooking = async (req:Request, res:Response) => {
@@ -38,9 +39,16 @@ export const createBooking = async (req:Request, res:Response) => {
         customer_longitude
     }
 
-    const booking = await insertBooking(input)
+    const booking = await insertBooking(input, isLocalTestMode() ? BookingStatus.PENDING_CONFIRMATION : BookingStatus.PENDING_PAYMENT)
     if(!booking){
         throw new AppError('Failed to book service', 500)
+    }
+
+    if (isLocalTestMode()) {
+        res.status(201).json({ success: true, message: 'Test booking created without payment', data: {
+            booking, authorization_url: null, payment_mode: 'disabled'
+        } })
+        return
     }
     
 
@@ -93,6 +101,11 @@ export const getBookingId = async (req: Request, res: Response) => {
 
     if (!booking) {
         throw new AppError('Booking not found', 404);
+    }
+
+    if (!req.user || (req.user.role !== Role.ADMIN && booking.customer_id !== req.user.id &&
+        !await isBookingProvider(id as string, req.user.id))) {
+        throw new AppError('You are not associated with this booking', 403)
     }
 
     res.status(200).json({ success: true, data: booking });
@@ -203,7 +216,7 @@ export const changeBookingStatus = async (req: Request, res: Response) => {
         }
     }
 
-    if (booking_status === BookingStatus.CANCELLED) {
+    if (booking_status === BookingStatus.CANCELLED && !isLocalTestMode()) {
         // check if payment exists and was successful
         const payment = await findPaymentByBookingId(booking.id)
 

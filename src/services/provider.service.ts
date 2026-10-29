@@ -4,6 +4,7 @@ import { CACHE_KEYS, CACHE_TTL } from "../constants"
 import { QueryType } from "../types/pagination.types"
 import { CreateProvider, CreateProviderService, Provider, ProviderService } from "../types/provider.types"
 import { Transaction } from "../types/transaction.types"
+import { AppError } from '../middlewares/errorHandler'
 import { deleteCache, getCache, setCache } from "../utils/cache.utils"
 
 // ------------------------------------------------
@@ -326,12 +327,14 @@ export const modifyProviderService = async(provider_service_id:string, service_i
 export const deleteProviderService = async(provider_service_id:string):Promise<ProviderService | null> => {
     try {
         const pool = getPool()
+        const bookings = await pool.query('SELECT 1 FROM bookings WHERE provider_service_id=$1 LIMIT 1', [provider_service_id])
+        if (bookings.rowCount) throw new AppError('This service has bookings and cannot be deleted', 409)
         const result = await pool.query(
             `DELETE FROM provider_services WHERE id=$1 RETURNING *`,
             [provider_service_id]
         )
         
-        await deleteCache(CACHE_KEYS.SERVICE_PROVIDERS(provider_service_id))
+        if (result.rows[0]) await deleteCache(CACHE_KEYS.SERVICE_PROVIDERS(result.rows[0].service_id))
     
         return result.rows[0] || null
     } catch (error) {

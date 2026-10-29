@@ -8,9 +8,11 @@ import { findUserById } from "../services/user.service"
 import { PayoutJobPayload } from "../types/payout.types"
 import { TransactionStatus, TransactionType } from "../types/transaction.types"
 import { createPaystackTransferRecipient, initiatePaystackTransfer } from "../utils/paystack.utils"
+import { assertPaymentsEnabled } from '../config/runtime.config'
 
 
 export const startPayoutWorker = async () => {
+    assertPaymentsEnabled()
     const channel = getChannel()
 
     // assert queue exists

@@ -4,8 +4,17 @@ import passport from 'passport'
 import { forgotPasswordSchema, loginSchema, registerAuthSchema, resetPasswordSchema, verifyEmailSchema } from '../validators/auth.validator'
 import { validate } from '../middlewares/validate.middleware'
 import { authLimiter } from '../config/rateLimit.config'
+import { isGoogleAuthEnabled } from '../config/runtime.config'
 
 const router = Router()
+
+router.use(['/google', '/google/callback'], (_req, res, next) => {
+    if (!isGoogleAuthEnabled()) {
+        res.status(503).json({ success: false, message: 'Google sign-in is not enabled in this environment' })
+        return
+    }
+    next()
+})
 
 router.post('/register',authLimiter, validate(registerAuthSchema), register)
 router.patch('/verify-email',validate(verifyEmailSchema), verify)

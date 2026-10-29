@@ -11,7 +11,7 @@ export const registerAuthSchema = z.object({
     .regex(/[a-z]/, "Password must contain at least one lowercase letter")
     .regex(/[0-9]/, "Password must contain at least one number")
     .regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character"),
-    role: z.enum(Object.values(Role) as [string, ...string[]]),
+    role: z.enum([Role.CUSTOMER, Role.PROVIDER]),
     phone_number: z.string().optional(),
     address: z.string().optional(),
     profile_picture: z.string().optional(),

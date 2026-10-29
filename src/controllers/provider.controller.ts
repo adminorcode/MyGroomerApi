@@ -161,6 +161,11 @@ export const removeProviderService = async(req:Request, res:Response) => {
         throw new AppError('Invalid id!', 400)
     }
 
+    if (!req.user) throw new AppError('Unauthorized', 401)
+    const provider = await findProviderByUserId(req.user.id)
+    const existing = await findProviderServiceById(providerServiceId)
+    if (!existing) throw new AppError('Provider service not found', 404)
+    if (!provider || provider.id !== existing.provider_id) throw new AppError('You do not own this service', 403)
     const result = await deleteProviderService(providerServiceId)
 
     if(!result){

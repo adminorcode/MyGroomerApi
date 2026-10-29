@@ -2,8 +2,10 @@ import cron from 'node-cron'
 import { logger } from '../config/logger.config'
 import { publishPayoutJob } from '../queues/payout.queue'
 import { fetchEligiblePayouts } from '../services/booking.service'
+import { assertPaymentsEnabled } from '../config/runtime.config'
 
 export const startPayoutCronJob = () => {
+    assertPaymentsEnabled()
     cron.schedule('0 * * * *', async ()=>{
         logger.info('Running payout cron job...')
         try {

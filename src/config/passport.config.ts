@@ -3,9 +3,11 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { createUser, findUserByEmail } from "../services/user.service";
 import { AppError } from "../middlewares/errorHandler";
 import { CreateUserInput, Role } from "../types/user.types";
+import { isGoogleAuthEnabled } from './runtime.config';
 
 
 export const initializePassport = () => {
+    if (!isGoogleAuthEnabled()) return
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID!,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET!,

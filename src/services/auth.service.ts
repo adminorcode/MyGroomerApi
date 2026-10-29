@@ -7,6 +7,7 @@ import { generateJwtToken } from '../utils/jwt.utils'
 import crypto from 'crypto'
 import { sendEmailVerificationToken, sendPasswordResetEmail } from '../utils/email.utils'
 import { insertProvider } from './provider.service'
+import { isLocalTestMode } from '../config/runtime.config'
 
 
 export const registerUser = async (user:RegisterInput)=>{
@@ -28,8 +29,9 @@ export const registerUser = async (user:RegisterInput)=>{
             ...user,
             role: user.role ?? Role.CUSTOMER,
             password: hashed_password,
-            email_verification_token: email_token.token,
-            email_verification_token_expires_at: email_token.expiry
+            email_verification_token: isLocalTestMode() ? undefined : email_token.token,
+            email_verification_token_expires_at: isLocalTestMode() ? undefined : email_token.expiry,
+            email_verified_at: isLocalTestMode() ? new Date() : undefined
         })
 
         // If role is provider, insert provider row
@@ -50,7 +52,7 @@ export const registerUser = async (user:RegisterInput)=>{
         // send verification email
         await sendEmailVerificationToken(email_token.token, user.email)
 
-        return {success:true, message:'User created successfully'}
+        return {success:true, message:'User created successfully', email: user.email, requires_verification: !isLocalTestMode()}
     } catch (error) {
         throw error
     }
