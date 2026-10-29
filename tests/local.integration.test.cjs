@@ -36,7 +36,7 @@ before(async () => {
     tutor=await login('tutor@mygroomer.test')
     groomer=await login('groomer@mygroomer.test')
     const email=`integration-${crypto.randomUUID()}@mygroomer.test`
-    const signup=await request('/auth/register','POST',{name:'Integration test only',email,password,role:'customer'})
+    const signup=await request('/auth/register','POST',{name:'Integration test only',email,password,role:'customer',phone_number:'+5511987654321',accepted_terms:true})
     assert.equal(signup.status,201)
     const user=await pool.query('SELECT id FROM users WHERE email=$1',[email])
     created.users.push(user.rows[0].id)
@@ -54,7 +54,7 @@ after(async () => {
 
 test('schema is migrated and demonstration screens have data',async()=>{
     const migrations=await pool.query('SELECT name FROM schema_migrations ORDER BY name')
-    assert.equal(migrations.rowCount,3)
+    assert.equal(migrations.rowCount,4)
     for(const [route,token] of [['/categories',tutor],['/bookings',tutor],['/bookings?as=provider',groomer],['/conversations',tutor],['/providers',groomer]]) {
         const result=await request(route,'GET',undefined,token)
         assert.equal(result.status,200,route)
@@ -69,6 +69,27 @@ test('Google and payment HTTP endpoints are disabled',async()=>{
     assert.equal((await request('/auth/google')).status,503)
     assert.equal((await request('/payments/initialize','POST',{booking_id:id(20)},tutor)).status,503)
     assert.equal((await request('/payments/webhook','POST',{event:'charge.success'})).status,503)
+})
+
+test('tutor registration stores consent and local mode can reset the password',async()=>{
+    const email=`tutor-access-${crypto.randomUUID()}@mygroomer.test`
+    const rejected=await request('/auth/register','POST',{name:'Sem aceite',email,password,role:'customer',phone_number:'+5511912345678'})
+    assert.equal(rejected.status,400)
+    assert.ok(rejected.body.errors.some(issue=>issue.field==='accepted_terms'))
+    const signup=await request('/auth/register','POST',{name:'Tutor acesso',email,password,role:'customer',phone_number:'+5511912345678',accepted_terms:true})
+    assert.equal(signup.status,201)
+    const stored=await pool.query('SELECT id, phone_number, terms_accepted_at FROM users WHERE email=$1',[email])
+    created.users.push(stored.rows[0].id)
+    assert.equal(stored.rows[0].phone_number,'+5511912345678')
+    assert.ok(stored.rows[0].terms_accepted_at)
+    assert.equal((await request('/auth/login','POST',{email,password})).status,200)
+    const forgot=await request('/auth/forgot-password','POST',{email})
+    assert.equal(forgot.status,200)
+    assert.equal(typeof forgot.body.reset_token,'string')
+    const nextPassword='LocalTest#2027'
+    assert.equal((await request('/auth/password-reset','POST',{token:forgot.body.reset_token,password:nextPassword})).status,200)
+    assert.equal((await request('/auth/login','POST',{email,password:nextPassword})).status,200)
+    assert.equal((await request('/auth/login','POST',{email,password})).status,401)
 })
 
 test('registration and private resources reject unauthorized access',async()=>{
