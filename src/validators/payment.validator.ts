@@ -1,5 +1,5 @@
 import {z} from 'zod'
 
 export const initializePaymentSchema = z.object({
-    booking_id: z.uuid('Invalid booking id')
+    booking_id: z.uuid('Agendamento inválido')
 })

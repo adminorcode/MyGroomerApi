@@ -1,8 +1,8 @@
 import { z } from 'zod'
 
 export const createConversationSchema = z.object({
-    provider_id: z.uuid('Invalid provider id'),
-    booking_id: z.uuid('Invalid booking id').optional(),
+    provider_id: z.uuid('Groomer inválido'),
+    booking_id: z.uuid('Agendamento inválido').optional(),
 })
 
 export const paginationQuerySchema = z.object({
@@ -13,7 +13,7 @@ export const paginationQuerySchema = z.object({
 })
 
 export const conversationIdParamSchema = z.object({
-    conversationId: z.uuid('Invalid conversation id'),
+    conversationId: z.uuid('Conversa inválida'),
 })
 
 export type CreateConversationSchema = z.infer<typeof createConversationSchema>

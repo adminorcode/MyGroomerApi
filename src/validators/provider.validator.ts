@@ -16,14 +16,14 @@ export const registerProviderSchema = z.object({
             ctx.addIssue({
                 code: 'custom',
                 path: ['momo_number'],
-                message: 'Momo number is required for mobile money payout'
+                message: 'O número do dinheiro móvel é obrigatório'
             })
         }
         if (!data.momo_provider) {
             ctx.addIssue({
                 code: 'custom',
                 path: ['momo_provider'],
-                message: 'MoMo provider is required for mobile money payout'
+                message: 'A operadora é obrigatória'
             })
         }
     }
@@ -33,21 +33,21 @@ export const registerProviderSchema = z.object({
             ctx.addIssue({
                 code: 'custom',
                 path: ['bank_account_number'],
-                message: 'Bank account number is required for bank payout'
+                message: 'O número da conta é obrigatório'
             })
         }
         if (!data.bank_account_name) {
             ctx.addIssue({
                 code: 'custom',
                 path: ['bank_account_name'],
-                message: 'Bank account name is required for bank payout'
+                message: 'O nome da conta é obrigatório'
             })
         }
         if (!data.bank_code) {
             ctx.addIssue({
                 code: 'custom',
                 path: ['bank_code'],
-                message: 'Bank code is required for bank payout'
+                message: 'O código do banco é obrigatório'
             })
         }
     }
@@ -55,11 +55,11 @@ export const registerProviderSchema = z.object({
 
 
 export const addProviderServiceSchema = z.object({
-    service_id: z.uuid('Invalid service id'),
-    price: z.number().positive()
+    service_id: z.uuid('Serviço inválido'),
+    price: z.number().positive('O preço deve ser maior que zero')
 })
 
 export const updateProviderServiceSchema = z.object({
-    price: z.number().positive()
+    price: z.number().positive('O preço deve ser maior que zero')
 }).strict()
 

@@ -11,23 +11,31 @@ import { CANCELLATION_FEE_RATE } from "../constants";
 import { logger } from "../config/logger.config";
 import { isLocalTestMode } from '../config/runtime.config';
 
+const bookingStatusLabel: Record<BookingStatus, string> = {
+    [BookingStatus.PENDING_PAYMENT]: 'pagamento pendente',
+    [BookingStatus.PENDING_CONFIRMATION]: 'aguardando confirmação',
+    [BookingStatus.CONFIRMED]: 'confirmado',
+    [BookingStatus.IN_PROGRESS]: 'em andamento',
+    [BookingStatus.COMPLETED]: 'concluído',
+    [BookingStatus.CANCELLED]: 'cancelado',
+}
 
 export const createBooking = async (req:Request, res:Response) => {
     const user = req.user
     const {provider_service_id, scheduled_at, customer_location, customer_latitude, customer_longitude} = req.body
 
     if(!user){
-        throw new AppError('Unauthorized', 401)
+        throw new AppError('Não autorizado', 401)
     }
 
     if (!provider_service_id || !scheduled_at || !customer_location){
-        throw new AppError('Missing required fields: provider_service_id, scheduled_at, customer_location', 400)
+        throw new AppError('Informe o serviço, a data e o local do atendimento', 400)
     }
 
     const providerService = await findProviderServiceById(provider_service_id)
     
     if(!providerService){
-        throw new AppError('Provider service not found!', 404)
+        throw new AppError('Serviço do groomer não encontrado', 404)
     }
     
     const input:CreateBookingInput =  {
@@ -41,11 +49,11 @@ export const createBooking = async (req:Request, res:Response) => {
 
     const booking = await insertBooking(input, isLocalTestMode() ? BookingStatus.PENDING_CONFIRMATION : BookingStatus.PENDING_PAYMENT)
     if(!booking){
-        throw new AppError('Failed to book service', 500)
+        throw new AppError('Não foi possível criar o agendamento', 500)
     }
 
     if (isLocalTestMode()) {
-        res.status(201).json({ success: true, message: 'Test booking created without payment', data: {
+        res.status(201).json({ success: true, message: 'Agendamento de teste criado sem pagamento', data: {
             booking, authorization_url: null, payment_mode: 'disabled'
         } })
         return
@@ -76,12 +84,12 @@ export const createBooking = async (req:Request, res:Response) => {
     const payment = await insertPayment(paymentInput)
 
     if(!payment){
-        throw new AppError('Failed to make payment', 500)
+        throw new AppError('Não foi possível iniciar o pagamento', 500)
     }
 
     res.status(201).json({
         success:true, 
-        message:'Service booked successfully!', 
+        message:'Serviço agendado com sucesso', 
         data: {
             booking,
             authorization_url: paystack_initialize.data.authorization_url
@@ -94,18 +102,18 @@ export const getBookingId = async (req: Request, res: Response) => {
     const { id } = req.params;
 
     if (!id) {
-        throw new AppError('Missing booking ID', 400);
+        throw new AppError('Identificador do agendamento ausente', 400);
     }
 
     const booking = await findBookingById(id as string);
 
     if (!booking) {
-        throw new AppError('Booking not found', 404);
+        throw new AppError('Agendamento não encontrado', 404);
     }
 
     if (!req.user || (req.user.role !== Role.ADMIN && booking.customer_id !== req.user.id &&
         !await isBookingProvider(id as string, req.user.id))) {
-        throw new AppError('You are not associated with this booking', 403)
+        throw new AppError('Você não participa deste agendamento', 403)
     }
 
     res.status(200).json({ success: true, data: booking });
@@ -115,7 +123,7 @@ export const getBookings = async (req: Request, res: Response) => {
     const user = req.user
     const { page, limit, status, as } = req.query
 
-    if (!user) throw new AppError('Unauthorized', 401)
+    if (!user) throw new AppError('Não autorizado', 401)
 
     // determine filter based on who is asking
     let customer_id: string | undefined
@@ -155,20 +163,20 @@ export const changeBookingStatus = async (req: Request, res: Response) => {
     const { booking_status } = req.body;
 
     if (!user){
-        throw new AppError('Unauthenticated!', 401)
+        throw new AppError('Não autenticado', 401)
     }
 
     if (!id) {
-        throw new AppError('Missing booking ID', 400);
+        throw new AppError('Identificador do agendamento ausente', 400);
     }
     if (!booking_status || !Object.values(BookingStatus).includes(booking_status)) {
-        throw new AppError('Invalid or missing booking status', 400);
+        throw new AppError('Status do agendamento inválido ou ausente', 400);
     }
 
     const booking = await findBookingById(id as string)
 
     if(!booking){
-        throw new AppError('Booking not found', 404)
+        throw new AppError('Agendamento não encontrado', 404)
     }
 
     // valid status transitions
@@ -185,7 +193,7 @@ export const changeBookingStatus = async (req: Request, res: Response) => {
     const allowedNextStatuses = validTransitions[booking.booking_status]
     if (!allowedNextStatuses.includes(booking_status)){
         throw new AppError(
-            `Cannot transition from ${booking.booking_status} to ${booking_status}`,
+            `Não é possível mudar de ${bookingStatusLabel[booking.booking_status]} para ${bookingStatusLabel[booking_status as BookingStatus]}.`,
             400
         )
     }
@@ -201,18 +209,18 @@ export const changeBookingStatus = async (req: Request, res: Response) => {
             booking_status === BookingStatus.IN_PROGRESS ||
             booking_status === BookingStatus.COMPLETED
         ) {
-            throw new AppError('Customers can only cancel bookings', 403)
+            throw new AppError('Tutores só podem cancelar agendamentos', 403)
         }
     }
 
     if (!isCustomer && !isAdmin) {
 
         if(!isProviderBooking){
-            throw new AppError('You are not associated with this booking', 403)
+            throw new AppError('Você não participa deste agendamento', 403)
         }
         
         if (booking_status === BookingStatus.PENDING_PAYMENT) {
-            throw new AppError('Providers cannot set bookings back to pending', 403)
+            throw new AppError('Groomers não podem voltar o agendamento para pendente', 403)
         }
     }
 
@@ -242,14 +250,14 @@ export const changeBookingStatus = async (req: Request, res: Response) => {
             logger.info('Refund initiated', { refund: refund.data }) // remove later
 
             if(!refund){
-                throw new AppError('Refund was unsuccessful', 500)
+                throw new AppError('O reembolso não foi concluído', 500)
             }
 
             // update payment status
            const update_payment_status =  await updatePaymentStatus(payment.paystack_reference, PaymentStatus.REFUNDED)
 
            if (!update_payment_status){
-                throw new AppError('Payment status failed to update', 500)
+                throw new AppError('Não foi possível atualizar o status do pagamento', 500)
            }
         } 
 
@@ -261,7 +269,7 @@ export const changeBookingStatus = async (req: Request, res: Response) => {
     const updated = await updateBookingStatus(id as string, { booking_status });
 
     if (!updated) {
-        throw new AppError('Booking not found or update failed', 404);
+        throw new AppError('Agendamento não encontrado ou a atualização falhou', 404);
     }
 
     res.status(200).json({ success: true, data: updated });
