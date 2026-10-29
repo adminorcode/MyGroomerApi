@@ -2,8 +2,13 @@ import { Server } from 'socket.io'
 import { Server as HttpServer } from 'http'
 import { z } from 'zod'
 import { logger } from './logger.config'
-import { verifyToken } from '../utils/jwt.utils'
-import { fetchUserConversations, findConversationById, insertMessage, markMessagesSeen } from '../services/conversation.service'
+import { verifyToken } from '../shared/auth/jwt'
+import {
+    fetchUserConversations,
+    markConversationSeen,
+    requireConversationMember,
+    sendConversationMessage,
+} from '../modules/conversation/conversation.service'
 
 const conversationInput = z.object({ conversation_id: z.uuid() })
 const messageInput = conversationInput.extend({ content: z.string().trim().min(1).max(4000) })
@@ -27,13 +32,6 @@ export const initializeSocket = (httpServer: HttpServer) => {
     io.on('connection', socket => {
         const user = socket.data.user
         socket.join(`user_${user.id}`)
-        const authorize = async (id: string) => {
-            const conversation = await findConversationById(id)
-            if (!conversation || ![conversation.customer_id, conversation.provider_id].includes(user.id)) {
-                throw new Error('You are not part of this conversation')
-            }
-            return conversation
-        }
         const fail = (error: unknown, ack?: unknown) => {
             const message = error instanceof Error ? error.message : 'Message operation failed'
             socket.emit('error', { message })
@@ -42,7 +40,7 @@ export const initializeSocket = (httpServer: HttpServer) => {
         socket.on('join_conversation', async (data, ack) => {
             try {
                 const input = conversationInput.parse(data)
-                await authorize(input.conversation_id)
+                await requireConversationMember(input.conversation_id, user.id)
                 await socket.join(`conversation_${input.conversation_id}`)
                 respond(ack, { success: true })
             } catch (error) { fail(error, ack) }
@@ -50,8 +48,7 @@ export const initializeSocket = (httpServer: HttpServer) => {
         socket.on('send_message', async (data, ack) => {
             try {
                 const input = messageInput.parse(data)
-                const conversation = await authorize(input.conversation_id)
-                const message = await insertMessage({ ...input, sender_id: user.id })
+                const { conversation, message } = await sendConversationMessage(input.conversation_id, user.id, input.content)
                 io.to(`user_${conversation.customer_id}`).to(`user_${conversation.provider_id}`).emit('new_message', message)
                 respond(ack, { success: true, data: message })
             } catch (error) { fail(error, ack) }
@@ -59,10 +56,9 @@ export const initializeSocket = (httpServer: HttpServer) => {
         socket.on('message_seen', async (data, ack) => {
             try {
                 const input = conversationInput.parse(data)
-                const conversation = await authorize(input.conversation_id)
-                await markMessagesSeen(input.conversation_id, user.id)
+                const { conversation } = await markConversationSeen(input.conversation_id, user.id)
                 io.to(`user_${conversation.customer_id}`).to(`user_${conversation.provider_id}`).emit('message_seen', {
-                    conversation_id: input.conversation_id, seen_by: user.id
+                    conversation_id: input.conversation_id, seen_by: user.id,
                 })
                 respond(ack, { success: true })
             } catch (error) { fail(error, ack) }

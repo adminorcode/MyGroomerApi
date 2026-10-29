@@ -171,6 +171,7 @@ test('local booking can be confirmed and cancelled without any payment',async()=
     created.bookings.push(booking.id)
     assert.equal(booking.pet_id, pet.body.data.id)
     assert.equal(booking.scheduled_at, scheduledAt, 'Scheduled instant must round-trip without a timezone shift')
+    assert.equal(result.body.message,'Agendamento de teste criado sem pagamento')
     assert.equal(result.body.data.payment_mode,'disabled')
     assert.equal(result.body.data.authorization_url,null)
     assert.equal(booking.booking_status,'pending_confirmation')
@@ -196,4 +197,122 @@ test('chat persists valid messages and rejects nonparticipants',async()=>{
         assert.equal((await emit(attacker,'message_seen',{conversation_id:id(30)})).success,false)
         assert.equal((await pool.query('SELECT is_seen FROM messages WHERE id=$1',[sent.data.id])).rows[0].is_seen,false)
     } finally { sender.disconnect();attacker.disconnect() }
+})
+
+test('provider registration rolls back both rows when the provider insert fails', async () => {
+    const db = require('../dist/config/database.config')
+    await db.connectDB()
+    const providerService = require('../dist/modules/provider/provider.service')
+    const auth = require('../dist/modules/auth/auth.service')
+    const original = providerService.insertProvider
+    providerService.insertProvider = async () => { throw new Error('induced provider insert failure') }
+    const email = `rollback-provider-${crypto.randomUUID()}@mygroomer.test`
+    try {
+        await assert.rejects(() => auth.registerUser({
+            name: 'Rollback groomer',
+            email,
+            password,
+            role: 'provider',
+            payout_method: 'mobile_money',
+            momo_number: '+233200000000',
+            momo_provider: 'mtn',
+            service_area: 'Pinheiros',
+            phone_number: '+5511987654321',
+            accepted_terms: true,
+        }), /induced provider insert failure/)
+        assert.equal((await pool.query('SELECT id FROM users WHERE email=$1', [email])).rowCount, 0)
+        assert.equal((await pool.query(
+            'SELECT providers.id FROM providers JOIN users ON users.id = providers.user_id WHERE users.email=$1',
+            [email],
+        )).rowCount, 0)
+    } finally {
+        providerService.insertProvider = original
+    }
+})
+
+test('provider self-registration rolls back when the role update fails', async () => {
+    const db = require('../dist/config/database.config')
+    await db.connectDB()
+    const email = `provider-role-${crypto.randomUUID()}@mygroomer.test`
+    const signup = await request('/auth/register', 'POST', {
+        name: 'Tutor que vira groomer', email, password, role: 'customer',
+        phone_number: '+5511987654321', accepted_terms: true,
+    })
+    assert.equal(signup.status, 201)
+    const user = (await pool.query('SELECT id, role FROM users WHERE email=$1', [email])).rows[0]
+    created.users.push(user.id)
+    const token = await login(email)
+    const auth = require('../dist/modules/auth/auth.service')
+    const { registerAsProvider } = require('../dist/modules/provider/provider.controller')
+    const original = auth.assignProviderRole
+    auth.assignProviderRole = async () => { throw new Error('induced role update failure') }
+    const body = {
+        payout_method: 'mobile_money', momo_number: '+233200000000', momo_provider: 'mtn', service_area: 'Pinheiros',
+    }
+    try {
+        await assert.rejects(() => registerAsProvider({ user: { id: user.id, name: 'Tutor que vira groomer', email }, body }, {}), /induced role update failure/)
+        assert.equal((await pool.query('SELECT id FROM providers WHERE user_id=$1', [user.id])).rowCount, 0)
+        assert.equal((await pool.query('SELECT role FROM users WHERE id=$1', [user.id])).rows[0].role, 'customer')
+    } finally {
+        auth.assignProviderRole = original
+    }
+    const registered = await request('/providers/register', 'POST', body, token)
+    assert.equal(registered.status, 201)
+    assert.equal((await pool.query('SELECT role FROM users WHERE id=$1', [user.id])).rows[0].role, 'provider')
+    assert.equal((await pool.query('SELECT id FROM providers WHERE user_id=$1', [user.id])).rowCount, 1)
+})
+
+test('charge confirmation rolls back payment and booking together', async () => {
+    const db = require('../dist/config/database.config')
+    await db.connectDB()
+    const bookingId = crypto.randomUUID()
+    const reference = `rollback_${bookingId}`
+    const { confirmSuccessfulCharge } = require('../dist/modules/payment/confirm-charge.service')
+    try {
+        await pool.query(
+            `INSERT INTO bookings (id, customer_id, provider_service_id, scheduled_at, booking_status, customer_location)
+             VALUES ($1,$2,$3,NOW()+INTERVAL '3 days','pending_payment','Rollback test')`,
+            [bookingId, id(1), id(10)],
+        )
+        await pool.query(
+            `INSERT INTO payments (customer_id, booking_id, amount, payment_date, payment_status, paystack_reference)
+             VALUES ($1,$2,80,NOW(),'pending',$3)`,
+            [id(1), bookingId, reference],
+        )
+        await assert.rejects(
+            () => confirmSuccessfulCharge(reference, { afterPaymentUpdate: async () => { throw new Error('induced failure') } }),
+            /induced failure/,
+        )
+        assert.equal((await pool.query('SELECT payment_status FROM payments WHERE paystack_reference=$1', [reference])).rows[0].payment_status, 'pending')
+        assert.equal((await pool.query('SELECT booking_status FROM bookings WHERE id=$1', [bookingId])).rows[0].booking_status, 'pending_payment')
+
+        await confirmSuccessfulCharge(reference)
+        assert.equal((await pool.query('SELECT payment_status FROM payments WHERE paystack_reference=$1', [reference])).rows[0].payment_status, 'success')
+        assert.equal((await pool.query('SELECT booking_status FROM bookings WHERE id=$1', [bookingId])).rows[0].booking_status, 'pending_confirmation')
+
+        await pool.query(`UPDATE bookings SET booking_status='confirmed' WHERE id=$1`, [bookingId])
+        await confirmSuccessfulCharge(reference)
+        assert.equal((await pool.query('SELECT payment_status FROM payments WHERE paystack_reference=$1', [reference])).rows[0].payment_status, 'success')
+        assert.equal((await pool.query('SELECT booking_status FROM bookings WHERE id=$1', [bookingId])).rows[0].booking_status, 'confirmed')
+
+        const { markChargeFailed } = require('../dist/modules/payment/payment.webhook.service')
+        const { withTransaction } = require('../dist/shared/db/transaction')
+        const { applyPaymentStatus } = require('../dist/modules/payment/payment.service')
+        await markChargeFailed(reference)
+        assert.equal((await pool.query('SELECT payment_status FROM payments WHERE paystack_reference=$1', [reference])).rows[0].payment_status, 'success')
+        await withTransaction(async (client) => {
+            const cancelled = await applyPaymentStatus(reference, 'cancelled', client)
+            assert.equal(cancelled.rejected, true)
+        })
+        assert.equal((await pool.query('SELECT payment_status FROM payments WHERE paystack_reference=$1', [reference])).rows[0].payment_status, 'success')
+
+        await pool.query(`UPDATE payments SET payment_status='refunded' WHERE paystack_reference=$1`, [reference])
+        await confirmSuccessfulCharge(reference)
+        assert.equal((await pool.query('SELECT payment_status FROM payments WHERE paystack_reference=$1', [reference])).rows[0].payment_status, 'refunded')
+        assert.equal((await pool.query('SELECT booking_status FROM bookings WHERE id=$1', [bookingId])).rows[0].booking_status, 'confirmed')
+    } finally {
+        await pool.query('DELETE FROM payments WHERE paystack_reference=$1', [reference])
+        await pool.query('DELETE FROM bookings WHERE id=$1', [bookingId])
+        await db.getPool().end()
+    }
 })
