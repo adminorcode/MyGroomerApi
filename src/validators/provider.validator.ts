@@ -63,3 +63,35 @@ export const updateProviderServiceSchema = z.object({
     price: z.number().positive('O preço deve ser maior que zero')
 }).strict()
 
+const blankToUndefined = (value: unknown) => value === '' || value === null || value === undefined ? undefined : value
+
+export const coverageSearchSchema = z.object({
+    address: z.preprocess(
+        blankToUndefined,
+        z.string({ error: 'Endereço do atendimento obrigatório' }).trim().min(3, 'Endereço do atendimento obrigatório').max(200, 'O endereço deve ter no máximo 200 caracteres'),
+    ),
+    service_id: z.preprocess(blankToUndefined, z.uuid('Serviço inválido').optional()),
+    category_id: z.preprocess(blankToUndefined, z.uuid('Modalidade inválida').optional()),
+    latitude: z.preprocess(blankToUndefined, z.coerce.number().min(-90).max(90).optional()),
+    longitude: z.preprocess(blankToUndefined, z.coerce.number().min(-180).max(180).optional()),
+}).superRefine((data, ctx) => {
+    if (!data.service_id && !data.category_id) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['service_id'],
+            message: 'Selecione um serviço ou uma modalidade',
+        })
+    }
+    const hasLatitude = data.latitude !== undefined
+    const hasLongitude = data.longitude !== undefined
+    if (hasLatitude !== hasLongitude) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['latitude'],
+            message: 'Informe latitude e longitude juntas',
+        })
+    }
+})
+
+export type CoverageSearchQuery = z.infer<typeof coverageSearchSchema>
+

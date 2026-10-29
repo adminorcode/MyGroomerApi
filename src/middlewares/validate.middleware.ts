@@ -20,7 +20,16 @@ const validateSource = (source: 'body' | 'query' | 'params') => (schema: ZodType
             return
         }
 
-        req[source] = result.data
+        if (source === 'query') {
+            Object.defineProperty(req, 'query', {
+                value: result.data,
+                writable: true,
+                configurable: true,
+                enumerable: true,
+            })
+        } else {
+            req[source] = result.data
+        }
         next()
     }
 }

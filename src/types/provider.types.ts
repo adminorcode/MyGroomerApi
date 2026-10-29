@@ -50,3 +50,17 @@ export type CreateProviderService = {
     service_id: string
     price?: number
 }
+
+export type CoverageProvider = {
+    id: string
+    provider_id: string
+    service_id: string
+    service_name: string
+    name: string
+    profile_picture?: string | null
+    price: number
+    average_rating: number
+    review_count: number
+    radius_km: number
+    distance_km: number
+}
