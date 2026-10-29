@@ -25,6 +25,12 @@ const seed = async () => {
             base_longitude = COALESCE(base_longitude, -46.655881),
             radius_km = COALESCE(radius_km, 8)
             WHERE id = $1`, [id(3)])
+        await client.query(`INSERT INTO professional_types(id, name, is_active)
+            VALUES ($1, 'Groomer', true)
+            ON CONFLICT (id) DO NOTHING`, [id(50)])
+        await client.query(`INSERT INTO provider_professional_types(provider_id, professional_type_id)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING`, [id(3), id(50)])
         await client.query(`INSERT INTO categories(id,name,description) VALUES
             ($1,'Banho e Tosa','Servicos demonstrativos para explorar o aplicativo') ON CONFLICT DO NOTHING`, [id(4)])
         const services = [[5,'Banho','Banho demonstrativo',80],[6,'Tosa','Tosa demonstrativa',100],[7,'Banho e tosa','Atendimento demonstrativo completo',150]] as const

@@ -8,6 +8,7 @@ import paymentRouter from '../modules/payment/payment.routes'
 import reviewRouter from '../modules/review/review.routes'
 import conversationRouter from '../modules/conversation/conversation.routes'
 import petRouter from '../modules/pet/pet.routes'
+import professionalTypeRouter from '../modules/professional-type/professional-type.routes'
 
 
 const router = Router()
@@ -20,5 +21,6 @@ router.use('/payments', paymentRouter)
 router.use('/reviews', reviewRouter)
 router.use('/conversations', conversationRouter)
 router.use('/pets', petRouter)
+router.use('/professional-types', professionalTypeRouter)
 
 export default router
