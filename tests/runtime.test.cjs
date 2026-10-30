@@ -78,7 +78,7 @@ test('local payment gateway is the fake and does not call Paystack', async () =>
     const { getPaymentGateway } = require('../dist/integrations/payments/payment-gateway')
     const gateway = getPaymentGateway()
     const initialized = await gateway.initializePayment({
-        email: 'tutor@mygroomer.test',
+        email: 'tutor@email.com',
         amountMinor: 0,
         reference: 'local-booking',
     })

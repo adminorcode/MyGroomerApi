@@ -7,7 +7,7 @@ const { Pool } = require('pg')
 const base = 'http://127.0.0.1:3000/api/v1'
 const id = n => `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-const password = 'LocalTest#2026'
+const password = 'admin'
 const createdUsers = []
 let tutor
 
@@ -26,7 +26,7 @@ before(async () => {
     const login = await fetch(base + '/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'tutor@mygroomer.test', password }),
+        body: JSON.stringify({ email: 'tutor@email.com', password }),
         signal: AbortSignal.timeout(10000),
     })
     const session = await login.json()

@@ -122,7 +122,9 @@ export const createBookingForCustomer = async (actor: BookingActor, body: Create
     if (!pet) throw new AppError('Pet não encontrado', 404)
 
     const providerService = await findProviderServiceById(provider_service_id)
-    if (!providerService) throw new AppError('Serviço do groomer não encontrado', 404)
+    if (!providerService || providerService.is_active === false) {
+        throw new AppError('Serviço do groomer não encontrado', 404)
+    }
 
     const bookingId = randomUUID()
     const input: CreateBookingInput = {

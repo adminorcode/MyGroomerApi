@@ -5,16 +5,20 @@ import { withDatabaseTransaction } from './database'
 const id = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const seed = async () => {
     assertLocalTestDatabase()
-    const password = await hash('LocalTest#2026', 10)
+    const password = await hash('admin', 10)
     await withDatabaseTransaction(async client => {
         await client.query("SELECT pg_advisory_xact_lock(hashtext('mygroomer:local-seed'))")
         for (const [number, name, email, role] of [
-            [1, 'Tutor de Teste', 'tutor@mygroomer.test', 'customer'],
-            [2, 'Groomer de Teste', 'groomer@mygroomer.test', 'provider']
+            [1, 'Tutor de Teste', 'tutor@email.com', 'customer'],
+            [2, 'Groomer de Teste', 'groomer@email.com', 'provider']
         ] as const) {
             await client.query(`INSERT INTO users(id,name,email,password,role,email_verified_at,address,phone_number)
                 VALUES ($1,$2,$3,$4,$5,NOW(),'Endereco ficticio - teste local','+5511999999999')
-                ON CONFLICT DO NOTHING`, [id(number), name, email, password, role])
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    email = EXCLUDED.email,
+                    password = EXCLUDED.password,
+                    role = EXCLUDED.role`, [id(number), name, email, password, role])
         }
         await client.query(`INSERT INTO providers(id,user_id,is_verified,payout_method,momo_number,momo_provider,
             total_jobs_completed,service_area) VALUES ($1,$2,true,'mobile_money','000000000','mtn',3,'Demonstracao local')
@@ -25,12 +29,35 @@ const seed = async () => {
             base_longitude = COALESCE(base_longitude, -46.655881),
             radius_km = COALESCE(radius_km, 8)
             WHERE id = $1`, [id(3)])
+        await client.query(`INSERT INTO professional_types(id, name, is_active)
+            VALUES ($1, 'Groomer', true)
+            ON CONFLICT (id) DO NOTHING`, [id(50)])
+        await client.query(`INSERT INTO provider_professional_types(provider_id, professional_type_id)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING`, [id(3), id(50)])
         await client.query(`INSERT INTO categories(id,name,description) VALUES
             ($1,'Banho e Tosa','Servicos demonstrativos para explorar o aplicativo') ON CONFLICT DO NOTHING`, [id(4)])
         const services = [[5,'Banho','Banho demonstrativo',80],[6,'Tosa','Tosa demonstrativa',100],[7,'Banho e tosa','Atendimento demonstrativo completo',150]] as const
         for (const [number,name,description,price] of services) {
             await client.query('INSERT INTO services(id,name,description,category_id) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [id(number),name,description,id(4)])
             await client.query('INSERT INTO provider_services(id,provider_id,service_id,price) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [id(number+5),id(3),id(number),price])
+        }
+        const sized = [
+            [10, 'Banho demonstrativo', 40, 60, 90],
+            [11, 'Tosa demonstrativa', 50, 70, 100],
+            [12, 'Atendimento demonstrativo completo', 80, 110, 140],
+        ] as const
+        for (const [number, description, small, medium, large] of sized) {
+            await client.query(`UPDATE provider_services SET
+                description = COALESCE(NULLIF(btrim(description), ''), $2),
+                professional_type_id = COALESCE(professional_type_id, $3),
+                price_small = COALESCE(price_small, price),
+                price_medium = COALESCE(price_medium, price),
+                price_large = COALESCE(price_large, price),
+                duration_small_minutes = COALESCE(duration_small_minutes, $4),
+                duration_medium_minutes = COALESCE(duration_medium_minutes, $5),
+                duration_large_minutes = COALESCE(duration_large_minutes, $6)
+                WHERE id = $1`, [id(number), description, id(50), small, medium, large])
         }
         for (const [number,status,days] of [[20,'pending_confirmation',1],[21,'confirmed',2],[22,'in_progress',0],[23,'completed',-2],[24,'cancelled',-1]] as const) {
             await client.query(`INSERT INTO bookings(id,customer_id,provider_service_id,scheduled_at,booking_status,customer_location,completed_at)
