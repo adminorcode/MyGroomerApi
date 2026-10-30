@@ -124,3 +124,66 @@ export const saveMenuSchema = z.object({
 
 export type SaveMenuOffer = z.infer<typeof menuOfferSchema>
 
+const emptyToNull = (value: unknown) => {
+    if (typeof value !== 'string') return value
+    const trimmed = value.trim()
+    return trimmed === '' ? null : trimmed
+}
+
+const postalCodeSchema = z.string({ error: 'Informe um CEP com 8 dígitos' })
+    .trim()
+    .transform(value => value.replace(/\D/g, ''))
+    .refine(value => /^\d{8}$/.test(value), 'Informe um CEP com 8 dígitos')
+
+const atMostTwoDecimals = (value: number) => Math.abs(value - Number(value.toFixed(2))) < 1e-9
+
+export const servicePostalCodeSchema = z.object({
+    postal_code: postalCodeSchema,
+}).strict()
+
+export const addressAutocompleteSchema = z.object({
+    text: z.string({ error: 'Informe o endereço' }).trim().min(3, 'Informe pelo menos 3 caracteres').max(200, 'O endereço deve ter no máximo 200 caracteres'),
+}).strict()
+
+export const serviceLocationPreviewSchema = z.object({
+    address: z.string({ error: 'Informe o endereço-base' }).trim().min(3, 'Informe o endereço-base').max(200, 'O endereço deve ter no máximo 200 caracteres'),
+    postal_code: postalCodeSchema,
+}).strict()
+
+export const saveServiceLocationSchema = z.object({
+    address: z.string({ error: 'Informe o endereço-base' }).trim().min(3, 'Informe o endereço-base').max(200, 'O endereço deve ter no máximo 200 caracteres'),
+    postal_code: z.union([z.null(), postalCodeSchema]).optional(),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    complement: z.preprocess(
+        emptyToNull,
+        z.string().max(120, 'O complemento deve ter no máximo 120 caracteres').nullable().optional(),
+    ),
+    radius_km: z.union([z.literal(3), z.literal(5), z.literal(8), z.literal(10)], { error: 'Escolha um raio de 3, 5, 8 ou 10 km' }),
+    travel_fee_mode: z.enum(['included', 'on_request', 'per_km'], { error: 'Escolha a taxa de deslocamento' }),
+    travel_fee_per_km: z.number().positive('Informe o valor por quilômetro').max(100000, 'O valor por quilômetro deve ser de no máximo 100000').nullable().optional(),
+}).strict().superRefine((data, ctx) => {
+    const hasLatitude = data.latitude != null
+    const hasLongitude = data.longitude != null
+    if (hasLatitude !== hasLongitude) {
+        ctx.addIssue({ code: 'custom', path: ['latitude'], message: 'Informe latitude e longitude juntas' })
+    }
+    if (!hasLatitude && !data.postal_code) {
+        ctx.addIssue({ code: 'custom', path: ['postal_code'], message: 'Informe o endereço ou o CEP' })
+    }
+    if (data.travel_fee_mode === 'per_km') {
+        if (data.travel_fee_per_km == null) {
+            ctx.addIssue({ code: 'custom', path: ['travel_fee_per_km'], message: 'Informe o valor por quilômetro' })
+        } else if (!atMostTwoDecimals(data.travel_fee_per_km)) {
+            ctx.addIssue({ code: 'custom', path: ['travel_fee_per_km'], message: 'O valor por quilômetro deve ter no máximo duas casas decimais' })
+        }
+        return
+    }
+    if (data.travel_fee_per_km != null) {
+        ctx.addIssue({ code: 'custom', path: ['travel_fee_per_km'], message: 'O valor por quilômetro só vale na faixa por km' })
+    }
+})
+
+export type ServiceLocationPreviewQuery = z.infer<typeof serviceLocationPreviewSchema>
+export type SaveServiceLocationInput = z.infer<typeof saveServiceLocationSchema>
+

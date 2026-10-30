@@ -259,6 +259,8 @@ GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 GOOGLE_CALLBACK_URL=http://localhost:3000/api/v1/auth/google/callback
 
+GEOAPIFY_API_KEY=your_geoapify_key
+
 RESEND_API_KEY=re_...
 ```
 
