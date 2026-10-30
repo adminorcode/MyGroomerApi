@@ -28,6 +28,8 @@ const seed = async () => {
             base_latitude = COALESCE(base_latitude, -23.561414),
             base_longitude = COALESCE(base_longitude, -46.655881),
             radius_km = COALESCE(radius_km, 8),
+            base_postal_code = COALESCE(base_postal_code, '01310100'),
+            travel_fee_mode = COALESCE(travel_fee_mode, 'included'),
             attendance_rules = COALESCE(NULLIF(btrim(attendance_rules), ''), 'Atendimento em domicílio. O tutor precisa estar presente durante o serviço.')
             WHERE id = $1`, [id(3)])
         await client.query(`INSERT INTO professional_types(id, name, is_active)

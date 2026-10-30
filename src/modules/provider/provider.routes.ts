@@ -12,10 +12,16 @@ import {
     registerAsProvider,
     getProviderEarnings,
     getProviderMenu,
+    getServiceLocation,
+    autocompleteServiceLocation,
+    lookupServicePostalCode,
+    mapTiles,
+    previewServiceLocation,
     saveProviderMenu,
+    saveServiceLocation,
 } from "./provider.controller";
 import { validate, validateQuery } from "../../shared/http/validate.middleware";
-import { addProviderServiceSchema, coverageSearchSchema, registerProviderSchema, saveMenuSchema, updateProviderServiceSchema } from "./provider.schemas";
+import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, registerProviderSchema, saveMenuSchema, saveServiceLocationSchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema } from "./provider.schemas";
 
 const router = Router()
 
@@ -34,6 +40,18 @@ router.get('/earnings', authenticate, getProviderEarnings)
 router.get('/menu', authenticate, getProviderMenu)
 
 router.put('/menu', authenticate, validate(saveMenuSchema), saveProviderMenu)
+
+router.get('/service-location/autocomplete', authenticate, validateQuery(addressAutocompleteSchema), autocompleteServiceLocation)
+
+router.get('/service-location/map-tiles', authenticate, mapTiles)
+
+router.get('/service-location/postal-code', authenticate, validateQuery(servicePostalCodeSchema), lookupServicePostalCode)
+
+router.get('/service-location/preview', authenticate, validateQuery(serviceLocationPreviewSchema), previewServiceLocation)
+
+router.get('/service-location', authenticate, getServiceLocation)
+
+router.put('/service-location', authenticate, validate(saveServiceLocationSchema), saveServiceLocation)
 
 router.get('/:providerServiceId/profile', authenticate, getPublicProfile)
 

@@ -14,7 +14,7 @@ let tutor
 const request = async (route, token) => {
     const response = await fetch(base + route, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(20000),
     })
     return { status: response.status, body: await response.json() }
 }
@@ -103,8 +103,7 @@ test('coverage search rejects a missing filter and an unknown address', async ()
     const unknown = await coverage('Rua sem mapa, 10', `&service_id=${id(5)}`)
     assert.equal(unknown.status, 400)
     assert.equal(unknown.body.message, 'Não foi possível localizar este endereço.')
-    const similar = await coverage('Rua Paulistana, 10', `&service_id=${id(5)}`)
-    assert.equal(similar.status, 400)
-    const mixed = await coverage('Jabaquara, próximo à Paulista', `&service_id=${id(5)}`)
-    assert.equal(mixed.status, 400)
+    const pinheiros = await coverage('Rua dos Pinheiros, 500, São Paulo', `&service_id=${id(5)}`)
+    assert.equal(pinheiros.status, 200)
+    assert.equal(pinheiros.body.data.providers.some(item => item.name === 'Groomer Distante'), false)
 })

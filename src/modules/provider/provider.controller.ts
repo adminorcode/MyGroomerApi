@@ -19,8 +19,9 @@ import { SaveMenuOffer } from "./provider.schemas"
 import { listProviderPayouts } from '../payout/payout.service'
 import { hasBookingsForProviderService } from '../booking/booking.service'
 import { withTransaction } from '../../shared/db/transaction'
-import { resolveCoverageAddress } from "./coverage.geo"
-import { CoverageSearchQuery } from "./provider.schemas"
+import { autocompleteAddress, locateBaseAddress, locateSearchAddress, lookupPostalAddress } from "./base-geocoder"
+import { CoverageSearchQuery, SaveServiceLocationInput, ServiceLocationPreviewQuery } from "./provider.schemas"
+import { readServiceLocation, writeServiceLocation } from "./service-location.service"
 import { QueryType } from "../../types/pagination.types"
 import { CreateProvider, CreateProviderService, PayoutMethod } from "./provider.types"
 import { assignProviderRole } from '../auth/auth.service'
@@ -156,7 +157,7 @@ export const searchCoverage = async (req: Request, res: Response) => {
     const latitude = query.latitude
     const longitude = query.longitude
     const resolved = latitude === undefined || longitude === undefined
-        ? resolveCoverageAddress(query.address)
+        ? await locateSearchAddress(query.address)
         : { latitude, longitude, label: query.address }
 
     if (!resolved) {
@@ -315,6 +316,60 @@ export const registerAsProvider = async (req: Request, res: Response) => {
         data: createdProvider,
         token
     })
+}
+
+const requireProvider = async (req: Request) => {
+    if (!req.user) throw new AppError('Não autorizado', 401)
+    const provider = await findProviderByUserId(req.user.id)
+    if (!provider) throw new AppError('Perfil do groomer não encontrado', 404)
+    return provider
+}
+
+export const getServiceLocation = async (req: Request, res: Response) => {
+    const provider = await requireProvider(req)
+    const location = await readServiceLocation(provider.id)
+    res.status(200).json({ success: true, data: location })
+}
+
+export const mapTiles = async (req: Request, res: Response) => {
+    await requireProvider(req)
+    const apiKey = process.env.GEOAPIFY_API_KEY?.trim()
+    if (!apiKey) throw new AppError('Geocodificação indisponível.', 503)
+    res.status(200).json({
+        success: true,
+        data: {
+            url: `https://maps.geoapify.com/v1/tile/klokantech-basic/{z}/{x}/{y}.png?apiKey=${apiKey}`,
+        },
+    })
+}
+
+export const autocompleteServiceLocation = async (req: Request, res: Response) => {
+    await requireProvider(req)
+    const text = (req.query as { text?: string }).text ?? ''
+    const suggestions = await autocompleteAddress(text)
+    res.status(200).json({ success: true, data: suggestions })
+}
+
+export const lookupServicePostalCode = async (req: Request, res: Response) => {
+    await requireProvider(req)
+    const postalCode = (req.query as { postal_code?: string }).postal_code ?? ''
+    const found = await lookupPostalAddress(postalCode)
+    if (!found) throw new AppError('Não foi possível localizar este CEP.', 400)
+    res.status(200).json({ success: true, data: found })
+}
+
+export const previewServiceLocation = async (req: Request, res: Response) => {
+    await requireProvider(req)
+    const query = req.query as unknown as ServiceLocationPreviewQuery
+    const point = await locateBaseAddress(query.address, query.postal_code)
+    if (!point) throw new AppError('Não foi possível localizar este endereço.', 400)
+    res.status(200).json({ success: true, data: point })
+}
+
+export const saveServiceLocation = async (req: Request, res: Response) => {
+    const provider = await requireProvider(req)
+    const location = await writeServiceLocation(provider.id, req.body as SaveServiceLocationInput)
+    res.status(200).json({ success: true, data: location })
 }
 
 export const getProviderEarnings = async (req:Request, res:Response) => {
