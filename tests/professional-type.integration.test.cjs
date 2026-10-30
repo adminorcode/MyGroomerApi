@@ -13,7 +13,7 @@ const groomerTypeId = '10000000-0000-4000-8000-000000000050'
 const demoProviderId = '10000000-0000-4000-8000-000000000003'
 const demoOfferId = '10000000-0000-4000-8000-000000000010'
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-const password = 'LocalTest#2026'
+const password = 'admin'
 const createdTypeIds = []
 let tutor
 let groomer
@@ -51,8 +51,8 @@ before(async () => {
     assert.equal(process.env.LOCAL_TEST_MODE, 'true', 'Test requires the explicitly configured local environment')
     const url = new URL(process.env.DATABASE_URL)
     assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && url.pathname === '/mygroomer_dev', 'Refusing nonlocal database')
-    tutor = await login('tutor@mygroomer.test')
-    groomer = await login('groomer@mygroomer.test')
+    tutor = await login('tutor@email.com')
+    groomer = await login('groomer@email.com')
     adminUserId = crypto.randomUUID()
     const email = `admin-types-${adminUserId}@mygroomer.test`
     await pool.query(
@@ -175,7 +175,7 @@ test('professional type catalog enforces admin writes, active listing, links and
          JOIN provider_professional_types ON provider_professional_types.professional_type_id = professional_types.id
          JOIN providers ON providers.id = provider_professional_types.provider_id
          JOIN users ON users.id = providers.user_id
-         WHERE professional_types.id = $1 AND users.email = 'groomer@mygroomer.test'`,
+         WHERE professional_types.id = $1 AND users.email = 'groomer@email.com'`,
         [groomerTypeId],
     )
     assert.equal(seeded.rowCount, 1)

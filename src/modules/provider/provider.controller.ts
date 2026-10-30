@@ -12,6 +12,8 @@ import {
     findProviderServiceByIdWithProviderDetails,
     fetchProvidersByCoverage,
 } from "./provider.service"
+import { readProviderMenu, saveProviderMenu as writeProviderMenu } from "./provider-menu.service"
+import { SaveMenuOffer } from "./provider.schemas"
 import { listProviderPayouts } from '../payout/payout.service'
 import { hasBookingsForProviderService } from '../booking/booking.service'
 import { withTransaction } from '../../shared/db/transaction'
@@ -64,6 +66,13 @@ export const getProviderServiceById = async (req: Request, res: Response) => {
         throw new AppError('Serviço do groomer não encontrado', 404)
     }
 
+    if (providerService.is_active === false) {
+        const owner = req.user ? await findProviderByUserId(req.user.id) : null
+        if (!owner || owner.id !== providerService.provider_id) {
+            throw new AppError('Serviço do groomer não encontrado', 404)
+        }
+    }
+
     res.status(200).json({
         success: true,
         data: providerService
@@ -82,26 +91,43 @@ export const getProviderServices = async (req: Request, res: Response) => {
         limit: parseInt(req.query.limit as string) || 10
     }
 
-    // default to the authenticated user's own provider services when no providerId is given
+    const owner = await findProviderByUserId(req.user.id)
     let providerIdToUse = providerId as string | undefined
 
     if (!providerIdToUse) {
-        const provider = await findProviderByUserId(req.user.id)
-        if (!provider) {
+        if (!owner) {
             throw new AppError('Perfil do groomer não encontrado', 404)
         }
-        providerIdToUse = provider.id
+        providerIdToUse = owner.id
     }
 
     const providerServices = await fetchProviderServices(
         providerIdToUse,
-        query
+        query,
+        owner?.id === providerIdToUse,
     )
 
     res.status(200).json({
         success: true,
         data: providerServices
     })
+}
+
+export const getProviderMenu = async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError('Não autorizado', 401)
+    const provider = await findProviderByUserId(req.user.id)
+    if (!provider) throw new AppError('Perfil do groomer não encontrado', 404)
+    const menu = await readProviderMenu(provider.id)
+    res.status(200).json({ success: true, data: menu })
+}
+
+export const saveProviderMenu = async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError('Não autorizado', 401)
+    const provider = await findProviderByUserId(req.user.id)
+    if (!provider) throw new AppError('Perfil do groomer não encontrado', 404)
+    const offers = (req.body as { offers: SaveMenuOffer[] }).offers
+    const menu = await writeProviderMenu(provider.id, offers)
+    res.status(200).json({ success: true, data: menu })
 }
 
 export const searchCoverage = async (req: Request, res: Response) => {

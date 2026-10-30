@@ -9,6 +9,7 @@ const id = n => `10000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const pool = new Pool({ connectionString:process.env.DATABASE_URL })
 const created = { users:[], bookings:[], messages:[], offers:[], pets:[] }
 const password = 'LocalTest#2026'
+const fixturePassword = 'admin'
 let tutor, groomer, outsider
 
 const request = async (route, method='GET', body, token) => {
@@ -16,7 +17,7 @@ const request = async (route, method='GET', body, token) => {
     return { status:response.status, body:await response.json() }
 }
 const login = async email => {
-    const result = await request('/auth/login','POST',{email,password})
+    const result = await request('/auth/login','POST',{email,password:fixturePassword})
     assert.equal(result.status,200)
     return result.body.token
 }
@@ -33,8 +34,8 @@ before(async () => {
     assert.ok(['127.0.0.1','localhost','[::1]'].includes(url.hostname) && url.pathname==='/mygroomer_dev','Refusing nonlocal database')
     const runtime=await request('/runtime')
     assert.deepEqual(runtime.body.data,{localTest:true,googleAuthEnabled:false,paymentsEnabled:false})
-    tutor=await login('tutor@mygroomer.test')
-    groomer=await login('groomer@mygroomer.test')
+    tutor=await login('tutor@email.com')
+    groomer=await login('groomer@email.com')
     const email=`integration-${crypto.randomUUID()}@mygroomer.test`
     const signup=await request('/auth/register','POST',{name:'Integration test only',email,password,role:'customer',phone_number:'+5511987654321',accepted_terms:true})
     assert.equal(signup.status,201)
@@ -55,7 +56,7 @@ after(async () => {
 
 test('schema is migrated and demonstration screens have data',async()=>{
     const migrations=await pool.query('SELECT name FROM schema_migrations ORDER BY name')
-    assert.equal(migrations.rowCount,7)
+    assert.equal(migrations.rowCount,8)
     for(const [route,token] of [['/categories',tutor],['/bookings',tutor],['/bookings?as=provider',groomer],['/conversations',tutor],['/providers',groomer]]) {
         const result=await request(route,'GET',undefined,token)
         assert.equal(result.status,200,route)
@@ -95,7 +96,7 @@ test('tutor registration stores consent and local mode can reset the password',a
 
 test('registration and private resources reject unauthorized access',async()=>{
     assert.equal((await request('/auth/register','POST',{name:'Forbidden',email:'forbidden@example.test',password,role:'admin'})).status,400)
-    assert.equal((await request('/auth/login','POST',{email:'tutor@mygroomer.test',password:'wrong'})).status,401)
+    assert.equal((await request('/auth/login','POST',{email:'tutor@email.com',password:'wrong'})).status,401)
     assert.equal((await request('/bookings/'+id(21),'GET',undefined,outsider)).status,403)
     assert.equal((await request('/providers/'+id(10),'DELETE',undefined,outsider)).status,403)
     assert.equal((await request('/providers/'+id(10),'PATCH',{price:-100},groomer)).status,400)
@@ -104,7 +105,7 @@ test('registration and private resources reject unauthorized access',async()=>{
 })
 
 test('tutor pet is private, optional photo is omitted, and a saved pet is reused',async()=>{
-    const tutorUser=await pool.query("SELECT id FROM users WHERE email='tutor@mygroomer.test'")
+    const tutorUser=await pool.query("SELECT id FROM users WHERE email='tutor@email.com'")
     const payload={name:'Rex integração',species:'dog',breed:'SRD',size:'medium',age_years:4,notes:'Medo de secador'}
     const invalid=await request('/pets','POST',{name:'',species:'bird',breed:'',size:'huge',age_years:-1,notes:'x'.repeat(501)},tutor)
     assert.equal(invalid.status,400)

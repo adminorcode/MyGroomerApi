@@ -41,6 +41,8 @@ export interface ProviderService {
     provider_id: string
     service_id: string
     price: number
+    is_active?: boolean
+    professional_type_id?: string | null
     created_at?: string
     updated_at?: string
 }
@@ -54,7 +56,7 @@ export type CreateProviderService = {
 export type CoverageProvider = {
     id: string
     provider_id: string
-    service_id: string
+    service_id: string | null
     service_name: string
     name: string
     profile_picture?: string | null

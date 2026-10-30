@@ -197,7 +197,7 @@ export const findProviderServiceByIdWithProviderDetails = async(provider_service
     }
 }
 
-export const fetchProviderServices = async(provider_id:string, query:QueryType):Promise<ProviderService[] | null> => {
+export const fetchProviderServices = async(provider_id:string, query:QueryType, includeInactive = false):Promise<ProviderService[] | null> => {
     try {
         const values = []
         const conditions = []
@@ -206,6 +206,9 @@ export const fetchProviderServices = async(provider_id:string, query:QueryType):
         if(provider_id){
             conditions.push(`provider_services.provider_id=$${index++}`)
             values.push(provider_id)
+        }
+        if (!includeInactive) {
+            conditions.push('provider_services.is_active')
         }
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
         
@@ -262,6 +265,7 @@ export const fetchServiceProviders = async(service_id:string):Promise<Provider[]
             LEFT JOIN providers ON provider_services.provider_id = providers.id
             LEFT JOIN users ON providers.user_id = users.id
             WHERE provider_services.service_id = $1
+              AND provider_services.is_active
             `,
             [service_id]
         )
@@ -331,7 +335,7 @@ export const fetchProvidersByCoverage = async (input: {
                 provider_services.id,
                 located.id AS provider_id,
                 provider_services.service_id,
-                services.name AS service_name,
+                COALESCE(services.name, provider_services.custom_name) AS service_name,
                 located.name,
                 located.profile_picture,
                 provider_services.price,
@@ -341,10 +345,16 @@ export const fetchProvidersByCoverage = async (input: {
                 located.distance_km
             FROM located
             INNER JOIN provider_services ON provider_services.provider_id = located.id
-            INNER JOIN services ON provider_services.service_id = services.id
+            LEFT JOIN services ON provider_services.service_id = services.id
             WHERE located.distance_km <= located.radius_km
+                AND provider_services.is_active
+                AND COALESCE(services.name, provider_services.custom_name) IS NOT NULL
                 AND ($3::uuid IS NULL OR provider_services.service_id = $3::uuid)
-                AND ($4::uuid IS NULL OR services.category_id = $4::uuid)
+                AND (
+                    $4::uuid IS NULL
+                    OR services.category_id = $4::uuid
+                    OR provider_services.category_id = $4::uuid
+                )
             ORDER BY located.id, provider_services.price ASC, services.name ASC
         ) picked
         ORDER BY picked.distance_km ASC, picked.name ASC
