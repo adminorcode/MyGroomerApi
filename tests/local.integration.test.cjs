@@ -16,9 +16,9 @@ const request = async (route, method='GET', body, token) => {
     const response = await fetch(base+route,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(10000)})
     return { status:response.status, body:await response.json() }
 }
-const login = async email => {
-    const result = await request('/auth/login','POST',{email,password:fixturePassword})
-    assert.equal(result.status,200)
+const login = async (email, secret = fixturePassword) => {
+    const result = await request('/auth/login','POST',{email,password:secret})
+    assert.equal(result.status,200,email)
     return result.body.token
 }
 const connect = token => new Promise((resolve,reject) => {
@@ -42,7 +42,7 @@ before(async () => {
     const user=await pool.query('SELECT id FROM users WHERE email=$1',[email])
     created.users.push(user.rows[0].id)
     assert.equal(signup.body.requires_verification,false)
-    outsider=await login(email)
+    outsider=await login(email, password)
 })
 
 after(async () => {
@@ -56,7 +56,7 @@ after(async () => {
 
 test('schema is migrated and demonstration screens have data',async()=>{
     const migrations=await pool.query('SELECT name FROM schema_migrations ORDER BY name')
-    assert.equal(migrations.rowCount,8)
+    assert.equal(migrations.rowCount,9)
     for(const [route,token] of [['/categories',tutor],['/bookings',tutor],['/bookings?as=provider',groomer],['/conversations',tutor],['/providers',groomer]]) {
         const result=await request(route,'GET',undefined,token)
         assert.equal(result.status,200,route)
@@ -242,7 +242,7 @@ test('provider self-registration rolls back when the role update fails', async (
     assert.equal(signup.status, 201)
     const user = (await pool.query('SELECT id, role FROM users WHERE email=$1', [email])).rows[0]
     created.users.push(user.id)
-    const token = await login(email)
+    const token = await login(email, password)
     const auth = require('../dist/modules/auth/auth.service')
     const { registerAsProvider } = require('../dist/modules/provider/provider.controller')
     const original = auth.assignProviderRole

@@ -2,7 +2,8 @@ import { Router } from "express";
 import { authenticate } from "../../shared/http/auth.middleware";
 import { 
     createProviderService, 
-    getProviderServiceById, 
+    getProviderServiceById,
+    getPublicProfile, 
     getProviderServices, 
     getServiceProviders, 
     searchCoverage,
@@ -33,6 +34,8 @@ router.get('/earnings', authenticate, getProviderEarnings)
 router.get('/menu', authenticate, getProviderMenu)
 
 router.put('/menu', authenticate, validate(saveMenuSchema), saveProviderMenu)
+
+router.get('/:providerServiceId/profile', authenticate, getPublicProfile)
 
 router.get('/:providerServiceId', authenticate, getProviderServiceById)
 

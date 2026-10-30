@@ -1,4 +1,5 @@
 import { Request, Response } from "express"
+import { z } from "zod"
 import { AppError } from "../../shared/errors"
 import {
     deleteProviderService,
@@ -10,6 +11,7 @@ import {
     findProviderByUserId,
     findProviderServiceById,
     findProviderServiceByIdWithProviderDetails,
+    findPublicProfileByOfferId,
     fetchProvidersByCoverage,
 } from "./provider.service"
 import { readProviderMenu, saveProviderMenu as writeProviderMenu } from "./provider-menu.service"
@@ -76,6 +78,25 @@ export const getProviderServiceById = async (req: Request, res: Response) => {
     res.status(200).json({
         success: true,
         data: providerService
+    })
+}
+
+export const getPublicProfile = async (req: Request, res: Response) => {
+    const { providerServiceId } = req.params
+
+    if (!providerServiceId || typeof providerServiceId !== 'string' || !z.uuid().safeParse(providerServiceId).success) {
+        throw new AppError('Identificador inválido', 400)
+    }
+
+    const profile = await findPublicProfileByOfferId(providerServiceId, req.user?.id)
+
+    if (!profile) {
+        throw new AppError('Perfil do profissional não encontrado', 404)
+    }
+
+    res.status(200).json({
+        success: true,
+        data: profile,
     })
 }
 
