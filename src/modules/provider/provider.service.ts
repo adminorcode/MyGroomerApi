@@ -3,7 +3,7 @@ import { getPool } from "../../config/database.config"
 import { logger } from "../../config/logger.config"
 import { CACHE_KEYS, CACHE_TTL } from "../../constants"
 import { QueryType } from "../../types/pagination.types"
-import { CoverageProvider, CreateProvider, CreateProviderService, Provider, ProviderService } from "./provider.types"
+import { CoverageProvider, CreateProvider, CreateProviderService, Provider, ProviderService, PublicProfile } from "./provider.types"
 import { AppError } from '../../shared/errors'
 import { deleteCache, getCache, setCache } from "../../shared/cache/cache"
 import { executor } from '../../shared/db/transaction'
@@ -170,7 +170,7 @@ export const findProviderServiceByIdWithProviderDetails = async(provider_service
                 providers.service_area,
                 providers.total_jobs_completed,
                 providers.is_verified,
-                services.name as service_name,
+                COALESCE(NULLIF(btrim(provider_services.custom_name), ''), services.name) as service_name,
                 users.name as provider_name,
                 users.profile_picture as provider_profile_picture,
                 (
@@ -194,6 +194,73 @@ export const findProviderServiceByIdWithProviderDetails = async(provider_service
         return result.rows[0] || null
     } catch (error) {
         throw error
+    }
+}
+
+export const findPublicProfileByOfferId = async (providerServiceId: string, requesterUserId?: string): Promise<PublicProfile | null> => {
+    const pool = getPool()
+    const entry = await pool.query(
+        `
+        SELECT
+            provider_services.provider_id,
+            provider_services.is_active,
+            providers.user_id,
+            providers.is_verified,
+            providers.attendance_rules,
+            users.name,
+            users.profile_picture,
+            (
+                SELECT COALESCE(ROUND(AVG(r.rating), 1), 0)
+                FROM reviews r
+                WHERE r.provider_user_id = providers.user_id
+            )::float AS average_rating,
+            (
+                SELECT COUNT(*)
+                FROM reviews r
+                WHERE r.provider_user_id = providers.user_id
+            )::int AS review_count
+        FROM provider_services
+        INNER JOIN providers ON providers.id = provider_services.provider_id
+        INNER JOIN users ON users.id = providers.user_id
+        WHERE provider_services.id = $1
+        `,
+        [providerServiceId],
+    )
+    const row = entry.rows[0]
+    if (!row) return null
+    if (row.is_active === false && row.user_id !== requesterUserId) return null
+
+    const services = await pool.query(
+        `
+        SELECT
+            provider_services.id,
+            COALESCE(NULLIF(btrim(provider_services.custom_name), ''), services.name) AS name,
+            provider_services.price
+        FROM provider_services
+        LEFT JOIN services ON services.id = provider_services.service_id
+        WHERE provider_services.provider_id = $1
+          AND provider_services.is_active
+          AND COALESCE(NULLIF(btrim(provider_services.custom_name), ''), services.name) IS NOT NULL
+        ORDER BY name ASC, provider_services.id ASC
+        `,
+        [row.provider_id],
+    )
+
+    const rules = typeof row.attendance_rules === 'string' ? row.attendance_rules.trim() : ''
+
+    return {
+        provider_id: row.provider_id,
+        name: row.name,
+        photo_url: row.profile_picture ?? null,
+        is_verified: row.is_verified === true,
+        average_rating: Number(row.average_rating) || 0,
+        review_count: Number(row.review_count) || 0,
+        attendance_rules: rules.length > 0 ? rules : null,
+        services: services.rows.flatMap(service => {
+            const price = Number(service.price)
+            if (!service.name || !Number.isFinite(price) || price <= 0) return []
+            return [{ id: service.id, name: service.name, price }]
+        }),
     }
 }
 

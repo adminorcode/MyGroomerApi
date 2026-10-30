@@ -66,3 +66,20 @@ export type CoverageProvider = {
     radius_km: number
     distance_km: number
 }
+
+export type PublicProfileService = {
+    id: string
+    name: string
+    price: number
+}
+
+export type PublicProfile = {
+    provider_id: string
+    name: string
+    photo_url: string | null
+    is_verified: boolean
+    average_rating: number
+    review_count: number
+    attendance_rules: string | null
+    services: PublicProfileService[]
+}
