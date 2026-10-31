@@ -19,9 +19,13 @@ import {
     previewServiceLocation,
     saveProviderMenu,
     saveServiceLocation,
+    getWeeklyAvailability,
+    saveWeeklyAvailability,
+    listWeeklySlots,
+    addManualAppointment,
 } from "./provider.controller";
 import { validate, validateQuery } from "../../shared/http/validate.middleware";
-import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, registerProviderSchema, saveMenuSchema, saveServiceLocationSchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema } from "./provider.schemas";
+import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, manualAppointmentSchema, registerProviderSchema, saveMenuSchema, saveServiceLocationSchema, saveWeeklyAvailabilitySchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema, weeklySlotsQuerySchema } from "./provider.schemas";
 
 const router = Router()
 
@@ -52,6 +56,14 @@ router.get('/service-location/preview', authenticate, validateQuery(serviceLocat
 router.get('/service-location', authenticate, getServiceLocation)
 
 router.put('/service-location', authenticate, validate(saveServiceLocationSchema), saveServiceLocation)
+
+router.get('/weekly-availability/slots', authenticate, validateQuery(weeklySlotsQuerySchema), listWeeklySlots)
+
+router.post('/weekly-availability/appointments', authenticate, validate(manualAppointmentSchema), addManualAppointment)
+
+router.get('/weekly-availability', authenticate, getWeeklyAvailability)
+
+router.put('/weekly-availability', authenticate, validate(saveWeeklyAvailabilitySchema), saveWeeklyAvailability)
 
 router.get('/:providerServiceId/profile', authenticate, getPublicProfile)
 
