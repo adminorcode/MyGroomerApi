@@ -20,8 +20,9 @@ import { listProviderPayouts } from '../payout/payout.service'
 import { hasBookingsForProviderService } from '../booking/booking.service'
 import { withTransaction } from '../../shared/db/transaction'
 import { autocompleteAddress, locateBaseAddress, locateSearchAddress, lookupPostalAddress } from "./base-geocoder"
-import { CoverageSearchQuery, SaveServiceLocationInput, ServiceLocationPreviewQuery } from "./provider.schemas"
+import { CoverageSearchQuery, ManualAppointmentInput, SaveServiceLocationInput, SaveWeeklyAvailabilityInput, ServiceLocationPreviewQuery, WeeklySlotsQuery } from "./provider.schemas"
 import { readServiceLocation, writeServiceLocation } from "./service-location.service"
+import { createManualAppointment, readWeeklyAvailability, readWeeklySlots, writeWeeklyAvailability } from "./weekly-availability.service"
 import { QueryType } from "../../types/pagination.types"
 import { CreateProvider, CreateProviderService, PayoutMethod } from "./provider.types"
 import { assignProviderRole } from '../auth/auth.service'
@@ -370,6 +371,31 @@ export const saveServiceLocation = async (req: Request, res: Response) => {
     const provider = await requireProvider(req)
     const location = await writeServiceLocation(provider.id, req.body as SaveServiceLocationInput)
     res.status(200).json({ success: true, data: location })
+}
+
+export const getWeeklyAvailability = async (req: Request, res: Response) => {
+    const provider = await requireProvider(req)
+    const routine = await readWeeklyAvailability(provider.id)
+    res.status(200).json({ success: true, data: routine })
+}
+
+export const saveWeeklyAvailability = async (req: Request, res: Response) => {
+    const provider = await requireProvider(req)
+    const routine = await writeWeeklyAvailability(provider.id, req.body as SaveWeeklyAvailabilityInput)
+    res.status(200).json({ success: true, data: routine })
+}
+
+export const listWeeklySlots = async (req: Request, res: Response) => {
+    const provider = await requireProvider(req)
+    const query = req.query as unknown as WeeklySlotsQuery
+    const slots = await readWeeklySlots(provider.id, query.date, query.duration_minutes)
+    res.status(200).json({ success: true, data: { slots } })
+}
+
+export const addManualAppointment = async (req: Request, res: Response) => {
+    const provider = await requireProvider(req)
+    const appointment = await createManualAppointment(provider.id, req.body as ManualAppointmentInput)
+    res.status(201).json({ success: true, data: appointment })
 }
 
 export const getProviderEarnings = async (req:Request, res:Response) => {

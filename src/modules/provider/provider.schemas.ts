@@ -187,3 +187,44 @@ export const saveServiceLocationSchema = z.object({
 export type ServiceLocationPreviewQuery = z.infer<typeof serviceLocationPreviewSchema>
 export type SaveServiceLocationInput = z.infer<typeof saveServiceLocationSchema>
 
+const optionalClock = z.string().trim().max(5).nullable().optional()
+
+const weekdaySchema = z.object({
+    enabled: z.boolean(),
+    start: optionalClock,
+    end: optionalClock,
+    break_start: optionalClock,
+    break_end: optionalClock,
+}).strict()
+
+export const saveWeeklyAvailabilitySchema = z.object({
+    days: z.object({
+        mon: weekdaySchema,
+        tue: weekdaySchema,
+        wed: weekdaySchema,
+        thu: weekdaySchema,
+        fri: weekdaySchema,
+        sat: weekdaySchema,
+        sun: weekdaySchema,
+    }).strict(),
+    travel_gap_minutes: z.number().int().refine(
+        (value) => value >= 15 && value <= 120 && value % 15 === 0,
+        { message: 'Escolha de 15 em 15 minutos, até 2 horas' },
+    ),
+    manual_fit: z.boolean(),
+}).strict()
+
+export const weeklySlotsQuerySchema = z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Informe a data'),
+    duration_minutes: z.coerce.number().int().positive('Informe a duração').max(720, 'A duração deve ser de no máximo 720 minutos'),
+}).strict()
+
+export const manualAppointmentSchema = z.object({
+    starts_at: z.string().min(1, 'Informe o início'),
+    ends_at: z.string().min(1, 'Informe o fim'),
+}).strict()
+
+export type SaveWeeklyAvailabilityInput = z.infer<typeof saveWeeklyAvailabilitySchema>
+export type WeeklySlotsQuery = z.infer<typeof weeklySlotsQuerySchema>
+export type ManualAppointmentInput = z.infer<typeof manualAppointmentSchema>
+
