@@ -20,7 +20,14 @@ export const createApp = () => {
         '/api/v1/payments/webhook',
         express.raw({ type: 'application/json' })
     )
-    app.use(express.json())
+    const defaultJson = express.json()
+    // Evidence payloads are parsed only after route authentication/rate limiting.
+    app.use((req, res, next) => {
+        const registration = (req.method === 'POST' && req.path === '/api/v1/auth/register') ||
+            (req.method === 'PUT' && req.path === '/api/v1/providers/registration')
+        if (registration) next()
+        else defaultJson(req, res, next)
+    })
     app.use(cors())
     app.use(helmet())
 

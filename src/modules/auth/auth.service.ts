@@ -10,6 +10,7 @@ import { insertProvider } from '../provider/provider.service'
 import { isLocalTestMode } from '../../config/runtime.config'
 import { withTransaction } from '../../shared/db/transaction'
 import { PoolClient } from 'pg'
+import { writeRegistration } from '../provider/registration.service'
 
 
 export const registerUser = async (user:RegisterInput)=>{
@@ -51,6 +52,12 @@ export const registerUser = async (user:RegisterInput)=>{
                     service_area: user.service_area,
                 }, client)
                 if (!provider) throw new AppError('Não foi possível concluir o cadastro de groomer', 500)
+                if (user.registration) {
+                    await writeRegistration(client, provider.id, {
+                        name: created.name, email: created.email, phone_number: created.phone_number ?? '',
+                        ...user.registration, mode: 'continue',
+                    })
+                }
             }
 
             return created

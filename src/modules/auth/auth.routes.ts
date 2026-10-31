@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, json } from 'express'
 import { googleAuthCallback, login, passwordReset, register, userForgotPassword, verify } from './auth.controller'
 import passport from 'passport'
 import { forgotPasswordSchema, loginSchema, registerAuthSchema, resetPasswordSchema, verifyEmailSchema } from './auth.schemas'
@@ -16,7 +16,7 @@ router.use(['/google', '/google/callback'], (_req, res, next) => {
     next()
 })
 
-router.post('/register',authLimiter, validate(registerAuthSchema), register)
+router.post('/register', authLimiter, json({ limit: '70mb' }), validate(registerAuthSchema), register)
 router.patch('/verify-email',validate(verifyEmailSchema), verify)
 router.post('/login',authLimiter, validate(loginSchema), login)
 

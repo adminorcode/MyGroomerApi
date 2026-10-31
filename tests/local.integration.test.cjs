@@ -2,6 +2,8 @@ require('dotenv').config({ quiet: true })
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
+const { readdirSync } = require('node:fs')
+const path = require('node:path')
 const { Pool } = require('pg')
 const { io } = require('socket.io-client')
 const base = 'http://127.0.0.1:3000/api/v1'
@@ -56,7 +58,8 @@ after(async () => {
 
 test('schema is migrated and demonstration screens have data',async()=>{
     const migrations=await pool.query('SELECT name FROM schema_migrations ORDER BY name')
-    assert.equal(migrations.rowCount,11)
+    const expectedMigrations = readdirSync(path.resolve(__dirname,'../migrations')).filter(name=>/^\d+.*\.sql$/.test(name)).sort()
+    assert.deepEqual(migrations.rows.map(row=>row.name),expectedMigrations)
     for(const [route,token] of [['/categories',tutor],['/bookings',tutor],['/bookings?as=provider',groomer],['/conversations',tutor],['/providers',groomer]]) {
         const result=await request(route,'GET',undefined,token)
         assert.equal(result.status,200,route)
@@ -214,12 +217,11 @@ test('provider registration rolls back both rows when the provider insert fails'
             email,
             password,
             role: 'provider',
-            payout_method: 'mobile_money',
-            momo_number: '+233200000000',
-            momo_provider: 'mtn',
-            service_area: 'Pinheiros',
             phone_number: '+5511987654321',
-            accepted_terms: true,
+            registration: {
+                document: '52998224725', experience: 'Atendimento domiciliar.', certifications: 'Curso de banho e tosa.',
+                professional_type_ids: [id(50)], attachments: [],
+            },
         }), /induced provider insert failure/)
         assert.equal((await pool.query('SELECT id FROM users WHERE email=$1', [email])).rowCount, 0)
         assert.equal((await pool.query(

@@ -69,6 +69,13 @@ test('tutor registration requires a valid phone and explicit consent', () => {
     assert.equal(registerAuthSchema.safeParse({
         name:'Groomer', email:'groomer-new@example.test', password, role:'provider',
         payout_method:'mobile_money', momo_number:'+233200000000', momo_provider:'mtn', service_area:'Pinheiros'
+    }).success, false)
+    assert.equal(registerAuthSchema.safeParse({
+        name:'Groomer Completo', email:'groomer-new@example.test', password, role:'provider',
+        phone_number:'+5511987654321', registration:{
+            document:'52998224725', experience:'Experiência com pets.', certifications:'Curso de banho e tosa.',
+            professional_type_ids:['10000000-0000-4000-8000-000000000001'], attachments:[],
+        },
     }).success, true)
 })
 

@@ -6,6 +6,7 @@ import {
     createProfessionalType,
     deleteProfessionalType,
     getProfessionalTypes,
+    getPublicProfessionalTypes,
     updateProfessionalType,
 } from './professional-type.controller'
 import {
@@ -16,6 +17,8 @@ import {
 } from './professional-type.schemas'
 
 const router = Router()
+
+router.get('/public', getPublicProfessionalTypes)
 
 router.post('/', authenticate, isAdmin, validate(createProfessionalTypeSchema), createProfessionalType)
 router.get('/', authenticate, validateQuery(listProfessionalTypesQuerySchema), getProfessionalTypes)
