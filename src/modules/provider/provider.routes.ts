@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, json } from "express";
 import { authenticate } from "../../shared/http/auth.middleware";
 import { 
     createProviderService, 
@@ -26,12 +26,23 @@ import {
 } from "./provider.controller";
 import { validate, validateQuery } from "../../shared/http/validate.middleware";
 import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, manualAppointmentSchema, registerProviderSchema, saveMenuSchema, saveServiceLocationSchema, saveWeeklyAvailabilitySchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema, weeklySlotsQuerySchema } from "./provider.schemas";
+import { getRegistration, putRegistration } from './registration.controller';
+import { saveRegistrationSchema } from './registration.schemas';
 
 const router = Router()
 
 
 
 router.post('/register', authenticate, validate(registerProviderSchema), registerAsProvider)
+
+router.get('/registration', authenticate, getRegistration)
+router.put('/registration', authenticate, (req, res, next) => {
+    if (req.user?.role !== 'provider') {
+        res.status(403).json({ message: 'Este cadastro é exclusivo de profissionais.' })
+        return
+    }
+    next()
+}, json({ limit: '70mb' }), validate(saveRegistrationSchema), putRegistration)
 
 router.post('/', authenticate,validate(addProviderServiceSchema), createProviderService)
 

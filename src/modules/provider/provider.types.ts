@@ -26,7 +26,7 @@ export interface Provider {
 
 export type CreateProvider = {
     user_id: string
-    payout_method: PayoutMethod
+    payout_method?: PayoutMethod
     momo_number?: string
     momo_provider?: MomoProvider
     bank_account_number?: string

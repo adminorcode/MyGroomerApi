@@ -334,7 +334,10 @@ const writeMenu = async (client: PoolClient, providerId: string, offers: SaveMen
 }
 
 export const saveProviderMenu = async (providerId: string, offers: SaveMenuOffer[]): Promise<ProviderMenu> => {
-    const serviceIds = await withTransaction(client => writeMenu(client, providerId, offers))
+    const serviceIds = await withTransaction(async client => {
+        await client.query('SELECT id FROM providers WHERE id = $1 FOR UPDATE', [providerId])
+        return writeMenu(client, providerId, offers)
+    })
     await Promise.all([...serviceIds].map(serviceId => deleteCache(CACHE_KEYS.SERVICE_PROVIDERS(serviceId))))
     return readProviderMenu(providerId)
 }

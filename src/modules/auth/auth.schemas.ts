@@ -1,6 +1,7 @@
 import {z} from 'zod'
 import { Role } from './user.types'
 import { MomoProvider, PayoutMethod } from '../provider/provider.types'
+import { registrationDetailsSchema, requireCompleteRegistration } from '../provider/registration.schemas'
 
 const e164Phone = /^\+[1-9]\d{6,14}$/
 
@@ -16,8 +17,8 @@ const requireCustomerPhone = (phone: string | undefined, ctx: z.RefinementCtx) =
 }
 
 export const registerAuthSchema = z.object({
-    name: z.string({ error: 'O nome é obrigatório' }).min(1, 'O nome é obrigatório'),
-    email: z.email({ error: 'Informe um e-mail válido' }),
+    name: z.string({ error: 'O nome é obrigatório' }).trim().min(1, 'O nome é obrigatório').max(160),
+    email: z.email({ error: 'Informe um e-mail válido' }).max(254),
     password: z.string({ error: 'A senha deve ter pelo menos 8 caracteres' })
     .min(8, "A senha deve ter pelo menos 8 caracteres")
     .regex(/[A-Z]/, "A senha deve ter pelo menos uma letra maiúscula")
@@ -37,6 +38,7 @@ export const registerAuthSchema = z.object({
     bank_code: z.string().optional(),
     id_document_url: z.string().optional(),
     service_area: z.string().optional(),
+    registration: registrationDetailsSchema.optional(),
 }).superRefine((data, ctx) => {
     if (data.role === Role.CUSTOMER) {
         requireCustomerPhone(data.phone_number, ctx)
@@ -48,32 +50,12 @@ export const registerAuthSchema = z.object({
 
     if (data.role !== Role.PROVIDER) return
 
-    if (!data.payout_method) {
-        ctx.addIssue({ code: 'custom', path: ['payout_method'], message: 'A forma de repasse é obrigatória' })
+    if (data.registration) {
+        requireCompleteRegistration({ ...data.registration, name: data.name, email: data.email, phone_number: data.phone_number }, ctx)
         return
     }
 
-    if (data.payout_method === PayoutMethod.MOBILE_MONEY) {
-        if (!data.momo_number) {
-            ctx.addIssue({ code: 'custom', path: ['momo_number'], message: 'O número do dinheiro móvel é obrigatório' })
-        }
-        if (!data.momo_provider) {
-            ctx.addIssue({ code: 'custom', path: ['momo_provider'], message: 'A operadora é obrigatória' })
-        }
-    }
-
-    if (data.payout_method === PayoutMethod.BANK) {
-        if (!data.bank_account_number) {
-            ctx.addIssue({ code: 'custom', path: ['bank_account_number'], message: 'O número da conta é obrigatório' })
-        }
-        if (!data.bank_account_name) {
-            ctx.addIssue({ code: 'custom', path: ['bank_account_name'], message: 'O nome da conta é obrigatório' })
-        }
-    }
-
-    if (!data.service_area) {
-        ctx.addIssue({ code: 'custom', path: ['service_area'], message: 'A área de atendimento é obrigatória' })
-    }
+    ctx.addIssue({ code: 'custom', path: ['registration'], message: 'Preencha os dados do cadastro profissional.' })
 })
 
 

@@ -10,6 +10,11 @@ import {
 
 const IN_USE = 'Não é possível excluir um tipo que já tem profissional ou serviço vinculado'
 
+export const getPublicProfessionalTypes = async (_req: Request, res: Response) => {
+    const types = await listProfessionalTypes(false)
+    res.json({ success: true, data: types.map(({ id, name }) => ({ id, name })) })
+}
+
 export const createProfessionalType = async (req: Request, res: Response) => {
     const created = await insertProfessionalType({ name: req.body.name })
     if (!created) throw new AppError('Não foi possível salvar o tipo', 500)

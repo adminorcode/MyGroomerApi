@@ -1,4 +1,5 @@
 import { CreateProvider } from '../provider/provider.types'
+import { RegistrationDetails } from '../provider/registration.schemas'
 
 export enum Role {
     PROVIDER = 'provider',
@@ -67,6 +68,7 @@ export type RegisterCustomerInput = RegisterBase & {
 
 export type RegisterProviderInput = RegisterBase & {
     role: Role.PROVIDER
+    registration?: RegistrationDetails
 } & Omit<CreateProvider, 'user_id'>
 
 export type RegisterInput = RegisterCustomerInput | RegisterProviderInput
