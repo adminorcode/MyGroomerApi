@@ -96,18 +96,17 @@ export const fetchReviewById = async (reviewId: string) => {
 
 export const createReviewForCustomer = async (
     customerId: string,
-    body: { booking_id?: string; rating?: number; comment?: string },
+    body: { booking_id: string; rating: number; comment: string },
 ) => {
     const { booking_id, rating, comment } = body
-    if (!booking_id || !rating || !comment) throw new AppError('Missing required fields', 400)
 
     const booking = await findBookingById(booking_id)
-    if (!booking) throw new AppError('Booking not found!', 404)
-    if (booking.customer_id !== customerId) throw new AppError('You are not the customer of this booking', 403)
-    if (booking.booking_status !== BookingStatus.COMPLETED) throw new AppError('Booking has not been completed', 400)
+    if (!booking) throw new AppError('Agendamento não encontrado', 404)
+    if (booking.customer_id !== customerId) throw new AppError('Você não é o tutor deste agendamento', 403)
+    if (booking.booking_status !== BookingStatus.COMPLETED) throw new AppError('O agendamento ainda não foi concluído', 400)
 
     const existingReview = await findReviewByBookingId(booking_id)
-    if (existingReview) throw new AppError('Review for this booking already exists', 400)
+    if (existingReview) throw new AppError('Já existe uma avaliação para este agendamento', 400)
 
     const provider = booking.provider_user_id
         ? await findProviderByUserId(booking.provider_user_id)

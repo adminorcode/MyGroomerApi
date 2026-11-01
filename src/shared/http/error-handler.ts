@@ -14,7 +14,7 @@ export const errorHandler = (err: Error, _req: Request, res: Response, _next: Ne
         })
     } else {
         res.status(500).json({
-            message: 'Something unexpected happened.',
+            message: 'Algo inesperado aconteceu.',
         })
     }
 }

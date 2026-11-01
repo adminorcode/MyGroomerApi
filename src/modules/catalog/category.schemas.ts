@@ -9,3 +9,7 @@ export const updateCategorySchema = createCategorySchema.partial().refine(
     (data) => data.name !== undefined || data.description !== undefined,
     { message: 'Informe pelo menos um campo' },
 )
+
+export const categoryIdSchema = z.object({
+    categoryId: z.uuid('Categoria inválida'),
+})

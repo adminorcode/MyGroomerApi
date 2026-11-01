@@ -13,7 +13,7 @@ export const handlePaymentWebhook = async (rawBody: Buffer, signature: string | 
 
     if (event.type === 'charge.success') {
         const verified = await getPaymentGateway().verifyPayment(event.reference)
-        if (verified.status !== 'success') throw new AppError('Payment verification failed', 400)
+        if (verified.status !== 'success') throw new AppError('Não foi possível confirmar o pagamento', 400)
         await confirmSuccessfulCharge(event.reference)
     }
 

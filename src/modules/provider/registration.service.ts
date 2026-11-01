@@ -1,7 +1,8 @@
 import { PoolClient } from 'pg'
+import { z } from 'zod'
 import { executor, withTransaction } from '../../shared/db/transaction'
 import { AppError } from '../../shared/errors'
-import { SaveRegistrationInput } from './registration.schemas'
+import { registrationDetailsSchema, requireCompleteRegistration, SaveRegistrationInput } from './registration.schemas'
 import { CACHE_KEYS } from '../../constants'
 import { deleteCache } from '../../shared/cache/cache'
 
@@ -24,6 +25,29 @@ export const readRegistration = async (providerId: string, client?: PoolClient) 
         SELECT id, name, mime_type, size FROM provider_registration_attachments
         WHERE provider_id = $1 ORDER BY created_at, id`, [providerId])
     return { ...current.rows[0], attachments: attachments.rows }
+}
+
+export const applySignupRegistration = (
+    data: { name: string, email: string, phone_number?: string, registration?: unknown },
+    ctx: z.RefinementCtx,
+) => {
+    if (!data.registration) {
+        ctx.addIssue({ code: 'custom', path: ['registration'], message: 'Preencha os dados do cadastro profissional.' })
+        return
+    }
+    const parsed = registrationDetailsSchema.safeParse(data.registration)
+    if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+            ctx.addIssue({ code: 'custom', path: ['registration', ...issue.path], message: issue.message })
+        }
+        return
+    }
+    requireCompleteRegistration({
+        ...parsed.data,
+        name: data.name,
+        email: data.email,
+        phone_number: data.phone_number,
+    }, ctx)
 }
 
 /** The caller owns the transaction; row locks serialize menu publication and changes to its types. */

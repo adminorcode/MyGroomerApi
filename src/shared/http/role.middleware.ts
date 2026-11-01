@@ -6,11 +6,11 @@ export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
     const user = req.user
 
     if (!user) {
-        throw new AppError('User not found', 401)
+        throw new AppError('Não autorizado', 401)
     }
 
     if (user.role !== Role.ADMIN) {
-        throw new AppError('Unauthorized', 401)
+        throw new AppError('Acesso exclusivo do administrador', 403)
     }
 
     next()

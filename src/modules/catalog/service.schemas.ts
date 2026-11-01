@@ -7,6 +7,19 @@ export const createServiceSchema = z.object({
     category_id: z.uuid('Categoria inválida'),
 })
 
+export const serviceIdSchema = z.object({
+    serviceId: z.uuid('Serviço inválido'),
+})
+
+export const listServicesQuerySchema = z.object({
+    categoryId: z.preprocess(
+        value => value === '' ? undefined : value,
+        z.uuid('Categoria inválida').optional(),
+    ),
+    page: z.coerce.number().int().positive().optional(),
+    limit: z.coerce.number().int().positive().optional(),
+})
+
 export const updateServiceSchema = createServiceSchema.partial().refine(
     (data) =>
         data.name !== undefined ||

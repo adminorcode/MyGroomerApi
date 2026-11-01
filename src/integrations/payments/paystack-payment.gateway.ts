@@ -27,7 +27,7 @@ export const paystackPaymentGateway: PaymentGateway = {
             },
         )
         const authorizationUrl = initialize.data?.data?.authorization_url
-        if (!authorizationUrl) throw new AppError('Payment initialization failed!', 500)
+        if (!authorizationUrl) throw new AppError('Não foi possível iniciar o pagamento', 500)
         return { authorizationUrl, reference: input.reference, mode: 'live' }
     },
 
@@ -63,7 +63,7 @@ export const paystackPaymentGateway: PaymentGateway = {
         const expectedBuffer = Buffer.from(hash)
         const providedBuffer = Buffer.from(provided)
         if (expectedBuffer.length !== providedBuffer.length || !timingSafeEqual(expectedBuffer, providedBuffer)) {
-            throw new AppError('Invalid signature', 401)
+            throw new AppError('Assinatura inválida', 401)
         }
 
         const body = JSON.parse(rawBody.toString()) as {
@@ -72,7 +72,7 @@ export const paystackPaymentGateway: PaymentGateway = {
         }
         const event = body.event
         if (event === 'charge.success') {
-            if (!body.data?.reference) throw new AppError('Payment verification failed', 400)
+            if (!body.data?.reference) throw new AppError('Não foi possível confirmar o pagamento', 400)
             return { type: 'charge.success', reference: body.data.reference }
         }
         if (event === 'charge.failed' && body.data?.reference) {

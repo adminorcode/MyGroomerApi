@@ -3,71 +3,42 @@ import { AppError } from '../../shared/errors'
 import { deleteCategory, fetchAllCategories, findCategoryById, insertCategory, modifyCategory } from './category.service'
 
 export const createCategory = async (req: Request, res: Response) => {
-    const { name } = req.body
-
-    if (!name) {
-        throw new AppError('Category must have a name', 400)
-    }
-
     await insertCategory(req.body)
-    res.status(201).json({ success: true, message: 'Category created successfully!' })
+    res.status(201).json({ success: true, message: 'Categoria criada com sucesso' })
 }
 
 export const getAllCategories = async (_req: Request, res: Response) => {
     const result = await fetchAllCategories()
     res.status(200).json({
         success: true,
-        message: 'Categories fetched successfully',
+        message: 'Categorias carregadas',
         data: result,
     })
 }
 
 export const getCategoryById = async (req: Request, res: Response) => {
-    const { categoryId } = req.params
-
-    if (typeof categoryId !== 'string') {
-        throw new AppError('Invalid category id', 400)
-    }
-
-    const result = await findCategoryById(categoryId)
+    const result = await findCategoryById(req.params.categoryId as string)
     res.status(200).json({
         success: true,
-        message: 'Category fetched successfully',
+        message: 'Categoria carregada',
         data: result,
     })
 }
 
 export const updateCategory = async (req: Request, res: Response) => {
-    const { categoryId } = req.params
-
-    if (!categoryId || typeof categoryId !== 'string') {
-        throw new AppError('Invalid id!', 400)
-    }
-
-    const result = await modifyCategory(categoryId, req.body)
-
+    const result = await modifyCategory(req.params.categoryId as string, req.body)
     res.status(200).json({
         success: true,
-        message: 'Category updated successfully',
+        message: 'Categoria atualizada',
         data: result,
     })
 }
 
 export const removeCategory = async (req: Request, res: Response) => {
-    const { categoryId } = req.params
-
-    if (!categoryId || typeof categoryId !== 'string') {
-        throw new AppError('Invalid id!', 400)
-    }
-
-    const result = await deleteCategory(categoryId)
-
-    if (!result) {
-        throw new AppError('Category not found', 404)
-    }
-
+    const result = await deleteCategory(req.params.categoryId as string)
+    if (!result) throw new AppError('Categoria não encontrada', 404)
     res.status(200).json({
         success: true,
-        message: 'Category deleted successfully',
+        message: 'Categoria excluída',
     })
 }

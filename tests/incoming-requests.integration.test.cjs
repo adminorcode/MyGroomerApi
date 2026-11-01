@@ -130,7 +130,7 @@ after(async () => {
 
 test('tutor, anonymous and another groomer cannot read or reject the solicitation', async () => {
     assert.equal((await request('/providers/requests', 'GET', undefined, null)).status, 401)
-    assert.equal((await request('/providers/requests', 'GET', undefined, null)).body.message, 'Invalid token')
+    assert.equal((await request('/providers/requests', 'GET', undefined, null)).body.message, 'Token inválido')
     const tutorList = await request('/providers/requests', 'GET', undefined, tutorToken)
     assert.equal(tutorList.status, 404)
     assert.equal(tutorList.body.message, 'Perfil do groomer não encontrado')

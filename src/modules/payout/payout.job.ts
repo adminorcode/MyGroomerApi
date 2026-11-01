@@ -1,7 +1,7 @@
 import cron from 'node-cron'
 import { logger } from '../../config/logger.config'
 import { assertPaymentsEnabled } from '../../config/runtime.config'
-import { fetchEligiblePayouts } from './payout.repo'
+import { listEligiblePayouts } from './payout.service'
 import { publishPayoutJob } from './payout.queue'
 
 export const startPayoutCronJob = () => {
@@ -9,7 +9,7 @@ export const startPayoutCronJob = () => {
     cron.schedule('0 * * * *', async () => {
         logger.info('Running payout cron job...')
         try {
-            const eligibleBookings = await fetchEligiblePayouts()
+            const eligibleBookings = await listEligiblePayouts()
             logger.info(`Found ${eligibleBookings.length} eligible payouts`)
 
             for (const booking of eligibleBookings) {

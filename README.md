@@ -1,5 +1,7 @@
 # Boame API
 
+Para acrescentar uma entidade com CRUD, siga [docs/adding-an-entity.md](docs/adding-an-entity.md).
+
 A service marketplace backend that connects customers to vetted providers for domestic and commercial services — starting with car wash and home cleaning, with plans to expand across more service categories.
 
 Built by **Asante** as a full-stack portfolio project demonstrating production-grade backend architecture. Pairs with the [Boame Client](https://github.com/littlegod20/boa_me_client) (React Native / Expo).

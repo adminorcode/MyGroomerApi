@@ -9,7 +9,7 @@ export const initializePayment = async (req: Request, res: Response) => {
     if (result.kind === 'existing') {
         res.status(200).json({
             success: true,
-            message: 'Payment already initiated',
+            message: 'O pagamento já foi iniciado',
             data: result.payment,
         })
         return
@@ -17,7 +17,7 @@ export const initializePayment = async (req: Request, res: Response) => {
 
     res.status(201).json({
         success: true,
-        message: 'Payment initiated',
+        message: 'Pagamento iniciado',
         data: result.authorizationUrl,
     })
 }

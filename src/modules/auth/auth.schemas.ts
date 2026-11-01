@@ -1,7 +1,7 @@
 import {z} from 'zod'
 import { Role } from './user.types'
 import { MomoProvider, PayoutMethod } from '../provider/provider.types'
-import { registrationDetailsSchema, requireCompleteRegistration } from '../provider/registration.schemas'
+import { applySignupRegistration } from '../provider/registration.service'
 
 const e164Phone = /^\+[1-9]\d{6,14}$/
 
@@ -38,7 +38,7 @@ export const registerAuthSchema = z.object({
     bank_code: z.string().optional(),
     id_document_url: z.string().optional(),
     service_area: z.string().optional(),
-    registration: registrationDetailsSchema.optional(),
+    registration: z.unknown().optional(),
 }).superRefine((data, ctx) => {
     if (data.role === Role.CUSTOMER) {
         requireCustomerPhone(data.phone_number, ctx)
@@ -49,13 +49,7 @@ export const registerAuthSchema = z.object({
     }
 
     if (data.role !== Role.PROVIDER) return
-
-    if (data.registration) {
-        requireCompleteRegistration({ ...data.registration, name: data.name, email: data.email, phone_number: data.phone_number }, ctx)
-        return
-    }
-
-    ctx.addIssue({ code: 'custom', path: ['registration'], message: 'Preencha os dados do cadastro profissional.' })
+    applySignupRegistration(data, ctx)
 })
 
 

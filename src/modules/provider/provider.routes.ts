@@ -25,7 +25,7 @@ import {
     addManualAppointment,
 } from "./provider.controller";
 import { validate, validateQuery } from "../../shared/http/validate.middleware";
-import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, manualAppointmentSchema, registerProviderSchema, saveMenuSchema, saveServiceLocationSchema, saveWeeklyAvailabilitySchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema, weeklySlotsQuerySchema } from "./provider.schemas";
+import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, manualAppointmentSchema, providerServiceIdSchema, registerProviderSchema, saveMenuSchema, saveServiceLocationSchema, saveWeeklyAvailabilitySchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema, weeklySlotsQuerySchema } from "./provider.schemas";
 import { getRegistration, putRegistration } from './registration.controller';
 import { saveRegistrationSchema } from './registration.schemas';
 import { deleteGalleryPhoto, deletePublicPhoto, getGalleryPhoto, getOwnPublicProfile, getPublicPhoto, postGalleryPhoto, putPublicDescription, putPublicPhoto, requireProvider } from './public-profile.controller';
@@ -98,15 +98,15 @@ router.get('/agenda-blocks', authenticate, getAgendaBlocks)
 router.post('/agenda-blocks', authenticate, validate(agendaBlockSchema), postAgendaBlock)
 router.delete('/agenda-blocks/:blockId', authenticate, validateParams(agendaBlockParamsSchema), removeAgendaBlock)
 
-router.get('/:providerServiceId/profile', authenticate, getPublicProfile)
+router.get('/:providerServiceId/profile', authenticate, validateParams(providerServiceIdSchema), getPublicProfile)
 
-router.get('/:providerServiceId', authenticate, getProviderServiceById)
+router.get('/:providerServiceId', authenticate, validateParams(providerServiceIdSchema), getProviderServiceById)
 
 router.get('/', authenticate, getProviderServices)
 
-router.patch('/:providerServiceId', authenticate, validate(updateProviderServiceSchema), updateProviderService)
+router.patch('/:providerServiceId', authenticate, validateParams(providerServiceIdSchema), validate(updateProviderServiceSchema), updateProviderService)
 
-router.delete('/:providerServiceId', authenticate, removeProviderService)
+router.delete('/:providerServiceId', authenticate, validateParams(providerServiceIdSchema), removeProviderService)
 
 
 

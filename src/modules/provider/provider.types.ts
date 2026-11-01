@@ -1,3 +1,5 @@
+export type { RegistrationDetails } from './registration.schemas'
+
 export enum PayoutMethod {
     MOBILE_MONEY = 'mobile_money',
     BANK = 'bank'

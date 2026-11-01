@@ -1,5 +1,4 @@
-import { CreateProvider } from '../provider/provider.types'
-import { RegistrationDetails } from '../provider/registration.schemas'
+import { CreateProvider, RegistrationDetails } from '../provider/provider.types'
 
 export enum Role {
     PROVIDER = 'provider',

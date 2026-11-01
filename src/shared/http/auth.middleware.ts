@@ -6,7 +6,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     const token = req.headers.authorization
 
     if (!token || !token.startsWith('Bearer ')) {
-        throw new AppError('Invalid token', 401)
+        throw new AppError('Token inválido', 401)
     }
 
     const parsedToken = token.split(' ')[1]
@@ -14,7 +14,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     try {
         req.user = verifyToken(parsedToken)
         next()
-    } catch (error) {
-        res.status(401).json({ message: error })
+    } catch {
+        res.status(401).json({ message: 'Token inválido' })
     }
 }

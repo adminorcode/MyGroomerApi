@@ -102,8 +102,8 @@ test('paystack webhook rejects a signed success event that has no reference', as
     const { paystackPaymentGateway } = require('../dist/integrations/payments/paystack-payment.gateway')
     const body = Buffer.from(JSON.stringify({ event: 'charge.success', data: {} }))
     const signature = createHmac('sha512', 'test-secret').update(body).digest('hex')
-    await assert.rejects(() => paystackPaymentGateway.parseWebhook(body, signature), /Payment verification failed/)
-    await assert.rejects(() => paystackPaymentGateway.parseWebhook(body, 'not-the-signature'), /Invalid signature/)
+    await assert.rejects(() => paystackPaymentGateway.parseWebhook(body, signature), /Não foi possível confirmar o pagamento/)
+    await assert.rejects(() => paystackPaymentGateway.parseWebhook(body, 'not-the-signature'), /Assinatura inválida/)
 })
 
 test('migrated modules keep payment boundaries and shared errors', () => {

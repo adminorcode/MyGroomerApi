@@ -1,21 +1,7 @@
 import axios from 'axios'
 import { assertPaymentsEnabled } from '../../config/runtime.config'
 import { logger } from '../../config/logger.config'
-
-export type TransferRecipient = {
-    type: 'mobile_money' | 'ghipss'
-    name: string
-    account_number: string
-    bank_code: string
-    currency: 'GHS'
-}
-
-export type InitiateTransfer = {
-    source: 'balance'
-    amount: number
-    recipient: string
-    reason: string
-}
+import type { InitiateTransfer, PayoutGateway, TransferRecipient } from './payout-gateway'
 
 const paystackHeaders = () => ({
     Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
@@ -60,4 +46,9 @@ export const initiatePaystackTransfer = async (transfer: InitiateTransfer) => {
         logger.error('initiatePaystackTransfer error', { error })
         throw error
     }
+}
+
+export const paystackPayoutGateway: PayoutGateway = {
+    createTransferRecipient: createPaystackTransferRecipient,
+    initiateTransfer: initiatePaystackTransfer,
 }

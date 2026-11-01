@@ -3,32 +3,28 @@ import { AppError } from '../../shared/errors'
 import { createReviewForCustomer, getReviewByIdForActor, listReviewsForActor } from './review.service'
 
 export const createReview = async (req: Request, res: Response) => {
-    if (!req.user?.id) throw new AppError('Unauthenticated', 401)
+    if (!req.user?.id) throw new AppError('Não autorizado', 401)
     const review = await createReviewForCustomer(req.user.id, req.body)
-    res.status(201).json({ success: true, message: 'Review created successfully!', data: review })
+    res.status(201).json({ success: true, message: 'Avaliação criada com sucesso', data: review })
 }
 
 export const getReviews = async (req: Request, res: Response) => {
-    if (!req.user) throw new AppError('Unauthenticated', 401)
+    if (!req.user) throw new AppError('Não autorizado', 401)
+    const query = req.query as { limit?: number, page?: number, customerId?: string, providerId?: string }
     const reviews = await listReviewsForActor(req.user, {
-        limit: parseInt(req.query.limit as string, 10),
-        page: parseInt(req.query.page as string, 10),
-        customerId: req.query.customerId as string | undefined,
-        providerId: req.query.providerId as string | undefined,
+        limit: query.limit,
+        page: query.page,
+        customerId: query.customerId,
+        providerId: query.providerId,
     })
-    res.status(200).json({ success: true, message: 'Fetched reviews successfully', data: reviews })
+    res.status(200).json({ success: true, message: 'Avaliações carregadas', data: reviews })
 }
 
 export const getReviewById = async (req: Request, res: Response) => {
-    const { reviewId } = req.params
-    if (!reviewId || typeof reviewId !== 'string') {
-        res.status(400).json({ message: 'Invalid review id' })
-        return
-    }
-    const review = await getReviewByIdForActor(reviewId)
+    const review = await getReviewByIdForActor(req.params.reviewId as string)
     if (!review) {
-        res.status(404).json({ message: 'Review for booking not found' })
+        res.status(404).json({ message: 'Avaliação não encontrada' })
         return
     }
-    res.status(200).json({ message: 'Review retrieved successfully', data: review })
+    res.status(200).json({ message: 'Avaliação carregada', data: review })
 }

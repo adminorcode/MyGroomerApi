@@ -1,5 +1,4 @@
 import { Request, Response } from "express"
-import { z } from "zod"
 import { AppError } from "../../shared/errors"
 import {
     deleteProviderService,
@@ -59,12 +58,7 @@ export const createProviderService = async (req: Request, res: Response) => {
 // Get a Provider Service by ID
 export const getProviderServiceById = async (req: Request, res: Response) => {
     const { providerServiceId } = req.params
-
-    if (!providerServiceId || typeof providerServiceId !== 'string') {
-        throw new AppError('Identificador inválido', 400)
-    }
-
-    const providerService = await findProviderServiceByIdWithProviderDetails(providerServiceId)
+    const providerService = await findProviderServiceByIdWithProviderDetails(providerServiceId as string)
 
     if (!providerService) {
         throw new AppError('Serviço do groomer não encontrado', 404)
@@ -85,12 +79,7 @@ export const getProviderServiceById = async (req: Request, res: Response) => {
 
 export const getPublicProfile = async (req: Request, res: Response) => {
     const { providerServiceId } = req.params
-
-    if (!providerServiceId || typeof providerServiceId !== 'string' || !z.uuid().safeParse(providerServiceId).success) {
-        throw new AppError('Identificador inválido', 400)
-    }
-
-    const profile = await findPublicProfileByOfferId(providerServiceId, req.user?.id)
+    const profile = await findPublicProfileByOfferId(providerServiceId as string, req.user?.id)
 
     if (!profile) {
         throw new AppError('Perfil do profissional não encontrado', 404)
@@ -213,12 +202,7 @@ export const updateProviderService = async (req: Request, res: Response) => {
 
     const { providerServiceId } = req.params
     const updateData: CreateProviderService = req.body
-
-    if (!providerServiceId || typeof providerServiceId !== 'string') {
-        throw new AppError('Identificador inválido', 400)
-    }
-
-    const existing = await findProviderServiceById(providerServiceId)
+    const existing = await findProviderServiceById(providerServiceId as string)
     if (!existing) throw new AppError('Serviço do groomer não encontrado', 404)
 
     // check if the provider is the owner of the service
@@ -227,7 +211,7 @@ export const updateProviderService = async (req: Request, res: Response) => {
     }
 
     const updated = await modifyProviderService(
-        providerServiceId, 
+        providerServiceId as string,
         existing.service_id,
         updateData
     )
@@ -239,21 +223,17 @@ export const updateProviderService = async (req: Request, res: Response) => {
 }
 
 export const removeProviderService = async(req:Request, res:Response) => {
-    const {providerServiceId} = req.params
-
-    if(!providerServiceId || typeof providerServiceId != 'string'){
-        throw new AppError('Identificador inválido', 400)
-    }
+    const { providerServiceId } = req.params
 
     if (!req.user) throw new AppError('Não autorizado', 401)
     const provider = await findProviderByUserId(req.user.id)
-    const existing = await findProviderServiceById(providerServiceId)
+    const existing = await findProviderServiceById(providerServiceId as string)
     if (!existing) throw new AppError('Serviço do groomer não encontrado', 404)
     if (!provider || provider.id !== existing.provider_id) throw new AppError('Este serviço não é seu', 403)
-    if (await hasBookingsForProviderService(providerServiceId)) {
-        throw new AppError('This service has bookings and cannot be deleted', 409)
+    if (await hasBookingsForProviderService(providerServiceId as string)) {
+        throw new AppError('Este serviço tem agendamentos e não pode ser excluído', 409)
     }
-    const result = await deleteProviderService(providerServiceId)
+    const result = await deleteProviderService(providerServiceId as string)
 
     if(!result){
         throw new AppError('Serviço do groomer não encontrado', 404)

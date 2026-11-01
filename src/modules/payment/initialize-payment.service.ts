@@ -14,14 +14,14 @@ type PaymentActor = {
 export const initializePaymentForBooking = async (actor: PaymentActor | undefined, bookingId: string | undefined) => {
     assertPaymentsEnabled()
     if (!actor) throw new AppError('Não autorizado', 401)
-    if (!bookingId) throw new AppError('Missing booking id', 400)
+    if (!bookingId) throw new AppError('Informe o agendamento', 400)
 
     const result = await findBookingById(bookingId)
-    if (!result) throw new AppError('No payment with this booking_id exists!', 404)
-    if (!result.customer_id) throw new AppError('Missing required fields: customer_email, customer_id, price', 400)
+    if (!result) throw new AppError('Agendamento não encontrado', 404)
+    if (!result.customer_id) throw new AppError('Não foi possível iniciar o pagamento deste agendamento', 400)
     await assertBookingParticipant(actor, bookingId, result.customer_id)
     if (!result.customer_email || !result.price) {
-        throw new AppError('Missing required fields: customer_email, customer_id, price', 400)
+        throw new AppError('Não foi possível iniciar o pagamento deste agendamento', 400)
     }
 
     const existingPayment = await findPaymentByBookingId(bookingId)

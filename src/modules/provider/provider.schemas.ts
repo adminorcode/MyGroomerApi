@@ -224,6 +224,10 @@ export const manualAppointmentSchema = z.object({
     ends_at: z.string().min(1, 'Informe o fim'),
 }).strict()
 
+export const providerServiceIdSchema = z.object({
+    providerServiceId: z.uuid('Serviço do groomer inválido'),
+})
+
 export type SaveWeeklyAvailabilityInput = z.infer<typeof saveWeeklyAvailabilitySchema>
 export type WeeklySlotsQuery = z.infer<typeof weeklySlotsQuerySchema>
 export type ManualAppointmentInput = z.infer<typeof manualAppointmentSchema>
