@@ -79,13 +79,28 @@ export type PublicProfileService = {
     price: number
 }
 
+export type PublicProfileArea = {
+    radius_km: 3 | 5 | 8 | 10
+    address: string
+}
+
+export type PublicProfileDay = {
+    weekday: number
+    start: string
+    end: string
+}
+
 export type PublicProfile = {
     provider_id: string
     name: string
     photo_url: string | null
+    photo_id: string | null
     is_verified: boolean
     average_rating: number
     review_count: number
     attendance_rules: string | null
+    area: PublicProfileArea | null
+    schedule: PublicProfileDay[]
+    gallery: { id: string }[]
     services: PublicProfileService[]
 }

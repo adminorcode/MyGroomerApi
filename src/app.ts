@@ -25,7 +25,9 @@ export const createApp = () => {
     app.use((req, res, next) => {
         const registration = (req.method === 'POST' && req.path === '/api/v1/auth/register') ||
             (req.method === 'PUT' && req.path === '/api/v1/providers/registration')
-        if (registration) next()
+        const publicPhoto = (req.method === 'PUT' && req.path === '/api/v1/providers/me/photo') ||
+            (req.method === 'POST' && req.path === '/api/v1/providers/me/gallery')
+        if (registration || publicPhoto) next()
         else defaultJson(req, res, next)
     })
     app.use(cors())

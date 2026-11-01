@@ -28,6 +28,8 @@ import { validate, validateQuery } from "../../shared/http/validate.middleware";
 import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, manualAppointmentSchema, registerProviderSchema, saveMenuSchema, saveServiceLocationSchema, saveWeeklyAvailabilitySchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema, weeklySlotsQuerySchema } from "./provider.schemas";
 import { getRegistration, putRegistration } from './registration.controller';
 import { saveRegistrationSchema } from './registration.schemas';
+import { deleteGalleryPhoto, deletePublicPhoto, getGalleryPhoto, getOwnPublicProfile, getPublicPhoto, postGalleryPhoto, putPublicDescription, putPublicPhoto, requireProvider } from './public-profile.controller';
+import { galleryPhotoParamsSchema, publicDescriptionSchema, publicPhotoParamsSchema, publicPhotoSchema } from './public-profile.schemas';
 import { getAgenda, getAgendaBlocks, postAgendaBlock, removeAgendaBlock } from './agenda.controller';
 import { agendaBlockSchema, agendaBlockParamsSchema, agendaQuerySchema } from './agenda.schemas';
 import { validateParams } from '../../shared/http/validate.middleware';
@@ -76,6 +78,15 @@ router.get('/weekly-availability/slots', authenticate, validateQuery(weeklySlots
 router.post('/weekly-availability/appointments', authenticate, validate(manualAppointmentSchema), addManualAppointment)
 
 router.get('/weekly-availability', authenticate, getWeeklyAvailability)
+
+router.get('/me/public-profile', authenticate, requireProvider, getOwnPublicProfile)
+router.put('/me/description', authenticate, requireProvider, validate(publicDescriptionSchema), putPublicDescription)
+router.put('/me/photo', authenticate, requireProvider, json({ limit: '70mb' }), validate(publicPhotoSchema), putPublicPhoto)
+router.delete('/me/photo', authenticate, requireProvider, deletePublicPhoto)
+router.post('/me/gallery', authenticate, requireProvider, json({ limit: '70mb' }), validate(publicPhotoSchema), postGalleryPhoto)
+router.delete('/me/gallery/:photoId', authenticate, requireProvider, validateParams(galleryPhotoParamsSchema), deleteGalleryPhoto)
+router.get('/gallery/:photoId', authenticate, validateParams(galleryPhotoParamsSchema), getGalleryPhoto)
+router.get('/public-photo/:providerId', authenticate, validateParams(publicPhotoParamsSchema), getPublicPhoto)
 
 router.put('/weekly-availability', authenticate, validate(saveWeeklyAvailabilitySchema), saveWeeklyAvailability)
 
