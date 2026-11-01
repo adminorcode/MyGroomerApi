@@ -1,9 +1,14 @@
+import { execute, sql, databaseError } from '../../shared/db/drizzle'
 import { PoolClient } from 'pg'
 import { CACHE_KEYS } from '../../constants'
 import { deleteCache } from '../../shared/cache/cache'
-import { executor, withTransaction } from '../../shared/db/transaction'
+import { withTransaction } from '../../shared/db/transaction'
 import { AppError } from '../../shared/errors'
+import { categoryExists } from '../catalog/category.service'
+import { findServiceCategoryId } from '../catalog/service.service'
+import { findProviderTypeLink } from '../professional-type/professional-type.service'
 import { SaveMenuOffer } from './provider.schemas'
+import { providerServices, providers } from './provider.table'
 
 const COMPLETE = 'Complete a descrição, o preço e a duração de cada porte antes de continuar.'
 const NEED_TYPE = 'Escolha o tipo de cada serviço ativo antes de continuar.'
@@ -56,13 +61,8 @@ const asNumber = (value: unknown): number | null => {
 const hasTwoDecimals = (value: number) =>
     Number.isFinite(value) && Math.abs(Math.round(value * 100) - value * 100) < 1e-8
 
-const pgError = (error: unknown) =>
-    typeof error === 'object' && error !== null
-        ? error as { code?: string, constraint?: string }
-        : {}
-
 const mapDuplicate = (error: unknown): never => {
-    const pg = pgError(error)
+    const pg = databaseError(error)
     if (pg.code === '23505') {
         if (pg.constraint === 'provider_services_custom_name_idx') throw new AppError(DUPLICATE_NAME, 409)
         throw new AppError(DUPLICATE_SERVICE, 409)
@@ -71,9 +71,7 @@ const mapDuplicate = (error: unknown): never => {
 }
 
 export const readProviderMenu = async (providerId: string, client?: PoolClient): Promise<ProviderMenu> => {
-    const db = executor(client)
-    const offers = await db.query(
-        `
+    const offers = await execute(client, sql`
         SELECT
             provider_services.id,
             provider_services.service_id,
@@ -91,18 +89,15 @@ export const readProviderMenu = async (providerId: string, client?: PoolClient):
             provider_services.duration_small_minutes,
             provider_services.duration_medium_minutes,
             provider_services.duration_large_minutes
-        FROM provider_services
+        FROM ${providerServices}
         LEFT JOIN services ON services.id = provider_services.service_id
         LEFT JOIN categories AS service_category ON service_category.id = services.category_id
         LEFT JOIN categories AS own_category ON own_category.id = provider_services.category_id
         LEFT JOIN professional_types ON professional_types.id = provider_services.professional_type_id
-        WHERE provider_services.provider_id = $1
+        WHERE provider_services.provider_id = ${providerId}
         ORDER BY lower(COALESCE(services.name, provider_services.custom_name)), provider_services.created_at
-        `,
-        [providerId],
-    )
-    const suggestions = await db.query(
-        `
+    `)
+    const suggestions = await execute(client, sql`
         SELECT
             services.id AS service_id,
             services.name,
@@ -112,41 +107,34 @@ export const readProviderMenu = async (providerId: string, client?: PoolClient):
         FROM services
         INNER JOIN categories ON categories.id = services.category_id
         WHERE NOT EXISTS (
-            SELECT 1 FROM provider_services
-            WHERE provider_services.provider_id = $1
+            SELECT 1 FROM ${providerServices}
+            WHERE provider_services.provider_id = ${providerId}
               AND provider_services.service_id = services.id
         )
         ORDER BY lower(services.name), services.name
-        `,
-        [providerId],
-    )
-    const types = await db.query(
-        `
+    `)
+    const types = await execute(client, sql`
         SELECT professional_types.id, professional_types.name
         FROM provider_professional_types
         INNER JOIN professional_types ON professional_types.id = provider_professional_types.professional_type_id
-        WHERE provider_professional_types.provider_id = $1
+        WHERE provider_professional_types.provider_id = ${providerId}
           AND professional_types.is_active
         ORDER BY lower(professional_types.name), professional_types.name
-        `,
-        [providerId],
-    )
-    const categories = await db.query(
-        `SELECT id, name FROM categories ORDER BY lower(name), name`,
-    )
+    `)
+    const categories = await execute(client, sql`SELECT id, name FROM categories ORDER BY lower(name), name`)
 
     return {
         offers: offers.rows.map(row => ({
-            id: row.id,
-            service_id: row.service_id,
-            custom_name: row.custom_name,
-            category_id: row.category_id,
-            category_name: row.category_name,
-            name: row.name,
-            description: row.description,
-            is_active: row.is_active,
-            professional_type_id: row.professional_type_id,
-            professional_type_name: row.professional_type_name,
+            id: row.id as string,
+            service_id: row.service_id as string | null,
+            custom_name: row.custom_name as string | null,
+            category_id: row.category_id as string | null,
+            category_name: row.category_name as string | null,
+            name: row.name as string,
+            description: row.description as string | null,
+            is_active: row.is_active as boolean,
+            professional_type_id: row.professional_type_id as string | null,
+            professional_type_name: row.professional_type_name as string | null,
             prices: {
                 small: asNumber(row.price_small),
                 medium: asNumber(row.price_medium),
@@ -158,9 +146,9 @@ export const readProviderMenu = async (providerId: string, client?: PoolClient):
                 large: asNumber(row.duration_large_minutes),
             },
         })),
-        suggestions: suggestions.rows,
-        types: types.rows,
-        categories: categories.rows,
+        suggestions: suggestions.rows as ProviderMenu['suggestions'],
+        types: types.rows as ProviderMenu['types'],
+        categories: categories.rows as ProviderMenu['categories'],
     }
 }
 
@@ -169,20 +157,9 @@ const assertType = async (client: PoolClient, providerId: string, typeId: string
         if (active) throw new AppError(NEED_TYPE, 400)
         return
     }
-    const type = await client.query(
-        `
-        SELECT professional_types.is_active,
-            EXISTS (
-                SELECT 1 FROM provider_professional_types
-                WHERE provider_id = $2 AND professional_type_id = professional_types.id
-            ) AS linked
-        FROM professional_types
-        WHERE professional_types.id = $1
-        `,
-        [typeId, providerId],
-    )
-    if (!type.rowCount || !type.rows[0].linked) throw new AppError(TYPE_NOT_CHOSEN, 400)
-    if (!type.rows[0].is_active) throw new AppError(TYPE_INACTIVE, 400)
+    const type = await findProviderTypeLink(client, typeId, providerId)
+    if (!type || !type.linked) throw new AppError(TYPE_NOT_CHOSEN, 400)
+    if (!type.is_active) throw new AppError(TYPE_INACTIVE, 400)
 }
 
 const assertOffer = async (client: PoolClient, providerId: string, offer: SaveMenuOffer) => {
@@ -193,14 +170,13 @@ const assertOffer = async (client: PoolClient, providerId: string, offer: SaveMe
 
     let categoryId = offer.category_id ?? null
     if (serviceId) {
-        const service = await client.query(`SELECT id, category_id FROM services WHERE id = $1`, [serviceId])
-        if (!service.rowCount) throw new AppError(INVALID_SERVICE, 400)
-        categoryId = service.rows[0].category_id
+        const service = await findServiceCategoryId(serviceId, client)
+        if (!service) throw new AppError(INVALID_SERVICE, 400)
+        categoryId = service.category_id
     } else if (!categoryId) {
         if (offer.is_active) throw new AppError(NEED_CATEGORY, 400)
-    } else {
-        const category = await client.query(`SELECT id FROM categories WHERE id = $1`, [categoryId])
-        if (!category.rowCount) throw new AppError(NEED_CATEGORY, 400)
+    } else if (!await categoryExists(categoryId, client)) {
+        throw new AppError(NEED_CATEGORY, 400)
     }
 
     await assertType(client, providerId, offer.professional_type_id ?? null, offer.is_active)
@@ -239,11 +215,13 @@ const assertOffer = async (client: PoolClient, providerId: string, offer: SaveMe
 }
 
 const writeMenu = async (client: PoolClient, providerId: string, offers: SaveMenuOffer[]) => {
-    const existing = await client.query(
-        `SELECT id, service_id FROM provider_services WHERE provider_id = $1 FOR UPDATE`,
-        [providerId],
-    )
-    const byId = new Map(existing.rows.map(row => [row.id as string, row.service_id as string | null]))
+    const existing = await execute<{ id: string, service_id: string | null }>(client, sql`
+        SELECT ${providerServices.id} AS id, ${providerServices.service_id} AS service_id
+        FROM ${providerServices}
+        WHERE ${providerServices.provider_id} = ${providerId}
+        FOR UPDATE
+    `)
+    const byId = new Map(existing.rows.map(row => [row.id, row.service_id]))
     const seenIds = new Set<string>()
     const seenServices = new Set<string>()
     const seenNames = new Set<string>()
@@ -273,56 +251,39 @@ const writeMenu = async (client: PoolClient, providerId: string, offers: SaveMen
         }
 
         const prepared = await assertOffer(client, providerId, offer)
-        const values = [
-            providerId,
-            prepared.serviceId,
-            prepared.customName,
-            prepared.categoryId,
-            prepared.typeId,
-            prepared.description,
-            offer.is_active,
-            prepared.price,
-            prepared.prices[0],
-            prepared.prices[1],
-            prepared.prices[2],
-            prepared.durations[0],
-            prepared.durations[1],
-            prepared.durations[2],
-        ]
         try {
             if (offer.id) {
-                await client.query(
-                    `
-                    UPDATE provider_services SET
-                        service_id = $2,
-                        custom_name = $3,
-                        category_id = $4,
-                        professional_type_id = $5,
-                        description = $6,
-                        is_active = $7,
-                        price = $8,
-                        price_small = $9,
-                        price_medium = $10,
-                        price_large = $11,
-                        duration_small_minutes = $12,
-                        duration_medium_minutes = $13,
-                        duration_large_minutes = $14,
+                await execute(client, sql`
+                    UPDATE ${providerServices} SET
+                        service_id = ${prepared.serviceId},
+                        custom_name = ${prepared.customName},
+                        category_id = ${prepared.categoryId},
+                        professional_type_id = ${prepared.typeId},
+                        description = ${prepared.description},
+                        is_active = ${offer.is_active},
+                        price = ${prepared.price},
+                        price_small = ${prepared.prices[0]},
+                        price_medium = ${prepared.prices[1]},
+                        price_large = ${prepared.prices[2]},
+                        duration_small_minutes = ${prepared.durations[0]},
+                        duration_medium_minutes = ${prepared.durations[1]},
+                        duration_large_minutes = ${prepared.durations[2]},
                         updated_at = NOW()
-                    WHERE id = $15 AND provider_id = $1
-                    `,
-                    [...values, offer.id],
-                )
+                    WHERE ${providerServices.id} = ${offer.id} AND ${providerServices.provider_id} = ${providerId}
+                `)
             } else {
-                await client.query(
-                    `
-                    INSERT INTO provider_services (
+                await execute(client, sql`
+                    INSERT INTO ${providerServices} (
                         provider_id, service_id, custom_name, category_id, professional_type_id,
                         description, is_active, price, price_small, price_medium, price_large,
                         duration_small_minutes, duration_medium_minutes, duration_large_minutes
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-                    `,
-                    values,
-                )
+                    ) VALUES (
+                        ${providerId}, ${prepared.serviceId}, ${prepared.customName}, ${prepared.categoryId}, ${prepared.typeId},
+                        ${prepared.description}, ${offer.is_active}, ${prepared.price},
+                        ${prepared.prices[0]}, ${prepared.prices[1]}, ${prepared.prices[2]},
+                        ${prepared.durations[0]}, ${prepared.durations[1]}, ${prepared.durations[2]}
+                    )
+                `)
             }
         } catch (error) {
             if (error instanceof AppError) throw error
@@ -335,7 +296,7 @@ const writeMenu = async (client: PoolClient, providerId: string, offers: SaveMen
 
 export const saveProviderMenu = async (providerId: string, offers: SaveMenuOffer[]): Promise<ProviderMenu> => {
     const serviceIds = await withTransaction(async client => {
-        await client.query('SELECT id FROM providers WHERE id = $1 FOR UPDATE', [providerId])
+        await execute(client, sql`SELECT ${providers.id} AS id FROM ${providers} WHERE ${providers.id} = ${providerId} FOR UPDATE`)
         return writeMenu(client, providerId, offers)
     })
     await Promise.all([...serviceIds].map(serviceId => deleteCache(CACHE_KEYS.SERVICE_PROVIDERS(serviceId))))

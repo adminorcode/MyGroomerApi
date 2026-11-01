@@ -1,13 +1,14 @@
-import { executor } from '../../shared/db/transaction'
+import { execute, sql } from '../../shared/db/drizzle'
+import { providerServices } from './provider.table'
 import { ProviderRequestsQuery } from './requests.schemas'
 
 const TIMEZONE = 'America/Sao_Paulo'
 
 const requestFilters = {
-    pending: `b.booking_status = 'pending_confirmation'`,
-    accepted: `b.booking_status = 'confirmed'`,
-    rejected: `b.provider_rejected_at IS NOT NULL`,
-    all: `(b.booking_status IN ('pending_confirmation', 'confirmed') OR b.provider_rejected_at IS NOT NULL)`,
+    pending: sql`b.booking_status = 'pending_confirmation'`,
+    accepted: sql`b.booking_status = 'confirmed'`,
+    rejected: sql`b.provider_rejected_at IS NOT NULL`,
+    all: sql`(b.booking_status IN ('pending_confirmation', 'confirmed') OR b.provider_rejected_at IS NOT NULL)`,
 } as const
 
 type RequestRow = {
@@ -29,11 +30,11 @@ const asNumberOrNull = (value: string | number | null): number | null => {
 }
 
 export const listProviderRequests = async (providerId: string, query: ProviderRequestsQuery) => {
-    const db = executor()
     const offset = (query.page - 1) * query.limit
+    const filter = requestFilters[query.group]
     const [rows, count] = await Promise.all([
-        db.query<RequestRow>(
-            `SELECT
+        execute<RequestRow>(undefined, sql`
+            SELECT
                 b.id,
                 CASE
                     WHEN b.provider_rejected_at IS NOT NULL THEN 'rejected'
@@ -43,31 +44,29 @@ export const listProviderRequests = async (providerId: string, query: ProviderRe
                 b.booking_status,
                 pets.name AS pet_name,
                 users.name AS customer_name,
-                COALESCE(NULLIF(btrim(provider_services.custom_name), ''), services.name) AS service_name,
+                COALESCE(NULLIF(btrim(${providerServices.custom_name}), ''), services.name) AS service_name,
                 b.scheduled_at,
                 b.customer_location,
-                COALESCE(b.service_price, provider_services.price) AS price
+                COALESCE(b.service_price, ${providerServices.price}) AS price
              FROM bookings b
-             JOIN provider_services ON provider_services.id = b.provider_service_id
+             JOIN ${providerServices} ON provider_services.id = b.provider_service_id
              LEFT JOIN services ON services.id = provider_services.service_id
              LEFT JOIN pets ON pets.id = b.pet_id
              LEFT JOIN users ON users.id = b.customer_id
-             WHERE provider_services.provider_id = $1
-               AND ${requestFilters[query.group]}
+             WHERE provider_services.provider_id = ${providerId}
+               AND ${filter}
              ORDER BY b.scheduled_at ASC, b.id ASC
-             LIMIT $2 OFFSET $3`,
-            [providerId, query.limit, offset],
-        ),
-        db.query<{ count: number }>(
-            `SELECT COUNT(*)::int AS count
-             FROM bookings b
-             JOIN provider_services ON provider_services.id = b.provider_service_id
-             WHERE provider_services.provider_id = $1
-               AND b.booking_status = 'pending_confirmation'
-               AND (b.created_at AT TIME ZONE $2)::date
-                   = (NOW() AT TIME ZONE $2)::date`,
-            [providerId, TIMEZONE],
-        ),
+             LIMIT ${query.limit} OFFSET ${offset}
+        `),
+        execute<{ count: number }>(undefined, sql`
+            SELECT COUNT(*)::int AS count
+            FROM bookings b
+            JOIN ${providerServices} ON provider_services.id = b.provider_service_id
+            WHERE provider_services.provider_id = ${providerId}
+              AND b.booking_status = 'pending_confirmation'
+              AND (b.created_at AT TIME ZONE ${TIMEZONE})::date
+                  = (NOW() AT TIME ZONE ${TIMEZONE})::date
+        `),
     ])
 
     return {

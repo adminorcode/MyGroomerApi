@@ -84,7 +84,8 @@ test('professional type catalog enforces admin writes, active listing, links and
     assert.equal(anonymous.status, 401)
 
     const refused = await request('/professional-types', 'POST', { name: 'Veterinário' }, tutor)
-    assert.equal(refused.status, 401)
+    assert.equal(refused.status, 403)
+    assert.equal(refused.body.message, 'Acesso exclusivo do administrador')
 
     const empty = await request('/professional-types', 'POST', { name: '   ' }, admin)
     assert.equal(empty.status, 400)

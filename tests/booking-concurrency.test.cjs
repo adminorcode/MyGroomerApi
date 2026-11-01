@@ -3,8 +3,12 @@ const assert = require('node:assert/strict')
 const axios = require('axios').default
 const db = require('../dist/config/database.config')
 const repo = require('../dist/modules/booking/booking.repo')
+const providers = require('../dist/modules/provider/provider.service')
 const slots = require('../dist/modules/booking/booking-slots.service')
 const service = require('../dist/modules/booking/booking.service')
+
+const statementOf = query => typeof query === 'string' ? query : query.text
+const valuesOf = (query, params) => params ?? query.values ?? []
 
 test('booking creation never initializes external payment', async () => {
     const originalMode = process.env.LOCAL_TEST_MODE
@@ -13,7 +17,7 @@ test('booking creation never initializes external payment', async () => {
         getPool: db.getPool,
         findOffer: require('../dist/modules/provider/provider.service').findProviderServiceById,
         lock: require('../dist/modules/provider/agenda.service').lockProviderAgenda,
-        providerUser: repo.findProviderUserId,
+        providerUser: providers.findProviderUserId,
         open: repo.findOpenBookingRequest,
         prepare: slots.revalidateBookingSlot,
         insert: repo.insertBooking,
@@ -26,7 +30,7 @@ test('booking creation never initializes external payment', async () => {
     axios.post = async () => { paymentCalled = true }
     require('../dist/modules/provider/provider.service').findProviderServiceById = async () => ({ id: 'offer', provider_id: 'provider' })
     require('../dist/modules/provider/agenda.service').lockProviderAgenda = async () => {}
-    repo.findProviderUserId = async () => 'provider-user'
+    providers.findProviderUserId = async () => 'provider-user'
     repo.findOpenBookingRequest = async () => null
     slots.revalidateBookingSlot = async () => ({ duration_minutes: 30, price: 50, timezone: 'America/Sao_Paulo', slots: [] })
     repo.insertBooking = async id => ({ id, booking_status: 'pending_confirmation' })
@@ -51,7 +55,7 @@ test('booking creation never initializes external payment', async () => {
         db.getPool = originals.getPool
         require('../dist/modules/provider/provider.service').findProviderServiceById = originals.findOffer
         require('../dist/modules/provider/agenda.service').lockProviderAgenda = originals.lock
-        repo.findProviderUserId = originals.providerUser
+        providers.findProviderUserId = originals.providerUser
         repo.findOpenBookingRequest = originals.open
         slots.revalidateBookingSlot = originals.prepare
         repo.insertBooking = originals.insert
@@ -87,10 +91,14 @@ test('a confirmation read before cancellation cannot overwrite the cancelled sta
     }
     db.getPool = () => ({
         query: async (sql, params) => {
-            assert.match(sql, /AND booking_status = \$4/)
-            updates.push([...params])
-            if (params[3] !== status) return { rows: [], rowCount: 0 }
-            status = params[0]
+            const text = statementOf(sql)
+            const values = valuesOf(sql, params)
+            const expected = text.match(/AND "bookings"\."booking_status" = \$(\d+)/)
+            assert.ok(expected, text)
+            const expectedIndex = Number(expected[1]) - 1
+            updates.push([values[0], values[expectedIndex]])
+            if (values[expectedIndex] !== status) return { rows: [], rowCount: 0 }
+            status = values[0]
             return { rows: [{ id: 'booking', booking_status: status }], rowCount: 1 }
         },
     })
@@ -102,7 +110,7 @@ test('a confirmation read before cancellation cannot overwrite the cancelled sta
         releaseConfirmation()
         await assert.rejects(() => confirming, error => error.statusCode === 409)
         assert.equal(status, 'cancelled')
-        assert.deepEqual(updates.map(params => [params[0], params[3]]), [
+        assert.deepEqual(updates, [
             ['cancelled', 'pending_confirmation'], ['confirmed', 'pending_confirmation'],
         ])
     } finally {

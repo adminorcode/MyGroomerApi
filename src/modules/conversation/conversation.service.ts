@@ -1,28 +1,20 @@
-import { getPool } from "../../config/database.config";
-import { logger } from "../../config/logger.config";
-import { Conversation, CreateConversationInput, CreateMessageInput, Message, UpdateMessageInput } from "./conversation.types";
-import { QueryType } from "../../types/pagination.types";
-import { findBookingById } from "../booking/booking.service";
-import { findProviderByUserId } from "../provider/provider.service";
-import { AppError } from "../../shared/errors";
+import { SQL } from 'drizzle-orm'
+import { logger } from '../../config/logger.config'
+import { col, execute, sql } from '../../shared/db/drizzle'
+import { Conversation, CreateConversationInput, CreateMessageInput, Message, UpdateMessageInput } from './conversation.types'
+import { conversations, messages } from './conversation.table'
+import { QueryType } from '../../types/pagination.types'
+import { findBookingById } from '../booking/booking.service'
+import { findProviderByUserId } from '../provider/provider.service'
+import { AppError } from '../../shared/errors'
 
-
-export const insertConversation = async (conversationInput:CreateConversationInput):Promise<Conversation | null>=>{
+export const insertConversation = async (conversationInput: CreateConversationInput): Promise<Conversation | null> => {
     try {
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            INSERT INTO conversations (booking_id, customer_id, provider_id)
-            VALUES ($1, $2, $3)
+        const result = await execute<Conversation>(undefined, sql`
+            INSERT INTO ${conversations} (booking_id, customer_id, provider_id)
+            VALUES (${conversationInput.booking_id ?? null}, ${conversationInput.customer_id}, ${conversationInput.provider_id})
             RETURNING *
-            `,
-            [
-                conversationInput.booking_id,
-                conversationInput.customer_id,
-                conversationInput.provider_id
-            ]
-        )
-
+        `)
         return result.rows[0] || null
     } catch (error) {
         logger.error('insertConversation error', { error })
@@ -30,14 +22,11 @@ export const insertConversation = async (conversationInput:CreateConversationInp
     }
 }
 
-export const findConversationById = async (conversationId:string):Promise<Conversation | null> => {
+export const findConversationById = async (conversationId: string): Promise<Conversation | null> => {
     try {
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            SELECT * FROM conversations WHERE id=$1
-            `, [conversationId]
-        )
+        const result = await execute<Conversation>(undefined, sql`
+            SELECT * FROM ${conversations} WHERE ${conversations.id} = ${conversationId}
+        `)
         return result.rows[0] || null
     } catch (error) {
         logger.error('findConversationById error', { error })
@@ -45,14 +34,11 @@ export const findConversationById = async (conversationId:string):Promise<Conver
     }
 }
 
-export const findConversationByBookingId = async(bookingId:string):Promise<Conversation | null> => {
+export const findConversationByBookingId = async (bookingId: string): Promise<Conversation | null> => {
     try {
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            SELECT * FROM conversations WHERE booking_id=$1
-            `, [bookingId]
-        )
+        const result = await execute<Conversation>(undefined, sql`
+            SELECT * FROM ${conversations} WHERE ${conversations.booking_id} = ${bookingId}
+        `)
         return result.rows[0] || null
     } catch (error) {
         logger.error('findConversationByBookingId error', { error })
@@ -60,14 +46,12 @@ export const findConversationByBookingId = async(bookingId:string):Promise<Conve
     }
 }
 
-export const findConversationsBetweenUsers = async(customerId:string, providerId:string):Promise<Conversation[]> => {
+export const findConversationsBetweenUsers = async (customerId: string, providerId: string): Promise<Conversation[]> => {
     try {
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            SELECT * FROM conversations WHERE customer_id=$1 AND provider_id=$2
-            `, [customerId, providerId]
-        )
+        const result = await execute<Conversation>(undefined, sql`
+            SELECT * FROM ${conversations}
+            WHERE ${conversations.customer_id} = ${customerId} AND ${conversations.provider_id} = ${providerId}
+        `)
         return result.rows
     } catch (error) {
         logger.error('findConversationsBetweenUsers error', { error })
@@ -75,47 +59,41 @@ export const findConversationsBetweenUsers = async(customerId:string, providerId
     }
 }
 
-
-export const fetchUserConversations = async(query:QueryType, userId:string):Promise<Conversation[]>=>{
+export const fetchUserConversations = async (query: QueryType, userId: string): Promise<Conversation[]> => {
     try {
         const page = query.page || 1
         const limit = query.limit || 10
         const offset = (page - 1) * limit
-
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            SELECT 
-                conversations.*, 
+        const result = await execute<Conversation>(undefined, sql`
+            SELECT
+                ${conversations}.*,
                 customer_users.name as customer_name,
                 customer_users.profile_picture as customer_profile,
                 provider_users.name as provider_name,
                 provider_users.profile_picture as provider_profile,
                 (
-                    SELECT  content FROM messages
-                    WHERE  messages.conversation_id = conversations.id
+                    SELECT content FROM ${messages}
+                    WHERE ${messages.conversation_id} = ${conversations.id}
                     ORDER BY created_at DESC LIMIT 1
                 ) as last_message,
                 (
-                    SELECT created_at FROM messages 
-                    WHERE messages.conversation_id = conversations.id 
+                    SELECT created_at FROM ${messages}
+                    WHERE ${messages.conversation_id} = ${conversations.id}
                     ORDER BY created_at DESC LIMIT 1
                 ) as last_message_at,
                 (
-                    SELECT COUNT(*)::int FROM messages
-                    WHERE messages.conversation_id = conversations.id
-                    AND messages.is_seen = false
-                    AND messages.sender_id <> $1
+                    SELECT COUNT(*)::int FROM ${messages}
+                    WHERE ${messages.conversation_id} = ${conversations.id}
+                    AND ${messages.is_seen} = false
+                    AND ${messages.sender_id} <> ${userId}
                 ) as unread_count
-            FROM conversations 
-            LEFT JOIN users as customer_users ON conversations.customer_id = customer_users.id
-            LEFT JOIN users as provider_users ON conversations.provider_id = provider_users.id
-            WHERE customer_id = $1 OR provider_id=$1
+            FROM ${conversations}
+            LEFT JOIN users as customer_users ON ${conversations.customer_id} = customer_users.id
+            LEFT JOIN users as provider_users ON ${conversations.provider_id} = provider_users.id
+            WHERE ${conversations.customer_id} = ${userId} OR ${conversations.provider_id} = ${userId}
             ORDER BY last_message_at DESC NULLS LAST
-            LIMIT $2 OFFSET $3
-            `,
-            [userId, limit, offset]
-        )
+            LIMIT ${limit} OFFSET ${offset}
+        `)
         return result.rows
     } catch (error) {
         logger.error('fetchUserConversations error', { error })
@@ -123,22 +101,13 @@ export const fetchUserConversations = async(query:QueryType, userId:string):Prom
     }
 }
 
-
-export const insertMessage = async(messageInput:CreateMessageInput):Promise<Message | null>=>{
+export const insertMessage = async (messageInput: CreateMessageInput): Promise<Message | null> => {
     try {
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            INSERT INTO messages (content, conversation_id, sender_id)
-            VALUES ($1, $2, $3)
+        const result = await execute<Message>(undefined, sql`
+            INSERT INTO ${messages} (content, conversation_id, sender_id)
+            VALUES (${messageInput.content}, ${messageInput.conversation_id}, ${messageInput.sender_id})
             RETURNING *
-            `, 
-            [
-                messageInput.content,
-                messageInput.conversation_id,
-                messageInput.sender_id
-            ]
-        )
+        `)
         return result.rows[0] || null
     } catch (error) {
         logger.error('insertMessage error', { error })
@@ -146,38 +115,21 @@ export const insertMessage = async(messageInput:CreateMessageInput):Promise<Mess
     }
 }
 
-export const updateMessage = async(messageInput:UpdateMessageInput, message_id:string):Promise<Message | null>=>{
+export const updateMessage = async (messageInput: UpdateMessageInput, message_id: string): Promise<Message | null> => {
     try {
-        const pool = getPool()
-
-        const fields = []
-        const values = []
-
-        let index = 1
-
-        if (messageInput.content){
-            fields.push(`content = $${index++}`)
-            values.push(messageInput.content)
-            fields.push(`is_edited = true`) 
+        const assignments: SQL[] = []
+        if (messageInput.content) {
+            assignments.push(sql`${col(messages.content)} = ${messageInput.content}`)
+            assignments.push(sql`${col(messages.is_edited)} = true`)
         }
-
-        if (messageInput.is_seen){
-            fields.push(`is_seen = $${index++}`)
-            values.push(messageInput.is_seen)
-        }
-
-        fields.push(`updated_at=NOW()`)
-        values.push(message_id)
-
-        const result = await pool.query(
-            `
-            UPDATE messages
-            SET ${fields.join(', ')}
-            WHERE id=$${index}
+        if (messageInput.is_seen) assignments.push(sql`${col(messages.is_seen)} = ${messageInput.is_seen}`)
+        assignments.push(sql`${col(messages.updated_at)} = NOW()`)
+        const result = await execute<Message>(undefined, sql`
+            UPDATE ${messages}
+            SET ${sql.join(assignments, sql`, `)}
+            WHERE ${messages.id} = ${message_id}
             RETURNING *
-            `,
-            values
-        )
+        `)
         return result.rows[0]
     } catch (error) {
         logger.error('updateMessage error', { error })
@@ -187,17 +139,13 @@ export const updateMessage = async(messageInput:UpdateMessageInput, message_id:s
 
 export const markMessagesSeen = async (conversationId: string, userId: string): Promise<number> => {
     try {
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            UPDATE messages
-            SET is_seen = true, updated_at = NOW()
-            WHERE conversation_id = $1
-              AND sender_id <> $2
-              AND is_seen = false
-            `,
-            [conversationId, userId]
-        )
+        const result = await execute(undefined, sql`
+            UPDATE ${messages}
+            SET ${col(messages.is_seen)} = true, ${col(messages.updated_at)} = NOW()
+            WHERE ${messages.conversation_id} = ${conversationId}
+              AND ${messages.sender_id} <> ${userId}
+              AND ${messages.is_seen} = false
+        `)
         return result.rowCount ?? 0
     } catch (error) {
         logger.error('markMessagesSeen error', { error })
@@ -205,42 +153,24 @@ export const markMessagesSeen = async (conversationId: string, userId: string): 
     }
 }
 
-
-export const fetchMessages = async(query:{cursor_time?:Date, cursor_id?:string, limit:number}, conversationId?:string):Promise<Message[]> => {
+export const fetchMessages = async (query: { cursor_time?: Date, cursor_id?: string, limit: number }, conversationId?: string): Promise<Message[]> => {
     try {
-
-        const values = []
-        const conditions = []
-        let index = 1
-        
-        if(conversationId){
-            conditions.push(`conversation_id=$${index++}`)
-            values.push(conversationId)
+        const conditions: SQL[] = []
+        if (conversationId) conditions.push(sql`${messages.conversation_id} = ${conversationId}`)
+        if (query.cursor_time && query.cursor_id) {
+            conditions.push(sql`(
+                ${messages.created_at} < ${query.cursor_time}
+                OR (${messages.created_at} = ${query.cursor_time} AND ${messages.id} < ${query.cursor_id})
+            )`)
         }
-
-        if(query.cursor_time && query.cursor_id){
-            const timePlaceholder = index++ // e.g. 2
-            const idPlaceholder = index++ // e.g. 3
-            conditions.push(`(created_at < $${timePlaceholder} OR (created_at = $${timePlaceholder} AND id < $${idPlaceholder}))`)
-            values.push(query.cursor_time)
-            values.push(query.cursor_id)
-        }
-
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-        
+        const whereClause = conditions.length > 0 ? sql`WHERE ${sql.join(conditions, sql` AND `)}` : sql``
         const limit = query.limit || 10
-        values.push(limit)
-         
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            SELECT * FROM messages
+        const result = await execute<Message>(undefined, sql`
+            SELECT * FROM ${messages}
             ${whereClause}
-            ORDER BY created_at DESC, id DESC
-            LIMIT $${index}
-            `,
-            values
-        )
+            ORDER BY ${messages.created_at} DESC, ${messages.id} DESC
+            LIMIT ${limit}
+        `)
         return result.rows || null
     } catch (error) {
         logger.error('fetchMessages error', { error })

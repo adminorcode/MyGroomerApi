@@ -1,5 +1,6 @@
-import { getPool } from '../../config/database.config'
+import { SQL } from 'drizzle-orm'
 import { logger } from '../../config/logger.config'
+import { execute, sql } from '../../shared/db/drizzle'
 import { findBookingById } from '../booking/booking.service'
 import { findProviderByUserId } from '../provider/provider.service'
 import { AppError } from '../../shared/errors'
@@ -7,24 +8,21 @@ import { QueryType } from '../../types/pagination.types'
 import { BookingStatus } from '../booking/booking.types'
 import { Role } from '../auth/user.types'
 import { CreateReviewInput, Review } from './review.types'
+import { reviews } from './review.table'
 
 export const insertReview = async (reviewInput: CreateReviewInput): Promise<Review | null> => {
     try {
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            INSERT INTO reviews (customer_id, provider_user_id, booking_id, rating, comment)
-            VALUES ($1, $2, $3, $4, $5)
+        const result = await execute<Review>(undefined, sql`
+            INSERT INTO ${reviews} (customer_id, provider_user_id, booking_id, rating, comment)
+            VALUES (
+                ${reviewInput.customer_id},
+                ${reviewInput.provider_user_id},
+                ${reviewInput.booking_id},
+                ${reviewInput.rating},
+                ${reviewInput.comment}
+            )
             RETURNING *
-            `,
-            [
-                reviewInput.customer_id,
-                reviewInput.provider_user_id,
-                reviewInput.booking_id,
-                reviewInput.rating,
-                reviewInput.comment,
-            ],
-        )
+        `)
         return result.rows[0] || null
     } catch (error) {
         logger.error('insertReview error', { error })
@@ -34,8 +32,9 @@ export const insertReview = async (reviewInput: CreateReviewInput): Promise<Revi
 
 export const findReviewByBookingId = async (bookingId: string): Promise<Review | null> => {
     try {
-        const pool = getPool()
-        const result = await pool.query(`SELECT * FROM reviews WHERE booking_id = $1`, [bookingId])
+        const result = await execute<Review>(undefined, sql`
+            SELECT * FROM ${reviews} WHERE ${reviews.booking_id} = ${bookingId}
+        `)
         return result.rows[0] || null
     } catch (error) {
         logger.error('findReviewByBookingId error', { error })
@@ -45,37 +44,19 @@ export const findReviewByBookingId = async (bookingId: string): Promise<Review |
 
 export const fetchReviews = async (query: QueryType, customerId?: string, providerUserId?: string): Promise<Review[]> => {
     try {
-        const conditions = []
-        const values = []
-        let index = 1
-
-        if (customerId) {
-            conditions.push(`customer_id=$${index++}`)
-            values.push(customerId)
-        }
-
-        if (providerUserId) {
-            conditions.push(`provider_user_id=$${index++}`)
-            values.push(providerUserId)
-        }
-
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+        const conditions: SQL[] = []
+        if (customerId) conditions.push(sql`${reviews.customer_id} = ${customerId}`)
+        if (providerUserId) conditions.push(sql`${reviews.provider_user_id} = ${providerUserId}`)
+        const whereClause = conditions.length > 0 ? sql`WHERE ${sql.join(conditions, sql` AND `)}` : sql``
         const limit = query.limit || 10
         const page = query.page || 1
         const offset = (page - 1) * limit
-        values.push(limit)
-        values.push(offset)
-
-        const pool = getPool()
-        const result = await pool.query(
-            `
-            SELECT * FROM reviews
+        const result = await execute<Review>(undefined, sql`
+            SELECT * FROM ${reviews}
             ${whereClause}
-            ORDER BY created_at DESC
-            LIMIT $${index++} OFFSET $${index}
-            `,
-            values,
-        )
+            ORDER BY ${reviews.created_at} DESC
+            LIMIT ${limit} OFFSET ${offset}
+        `)
         return result.rows
     } catch (error) {
         logger.error('fetchCustomerReviews error', { error })
@@ -84,9 +65,8 @@ export const fetchReviews = async (query: QueryType, customerId?: string, provid
 }
 
 export const fetchReviewById = async (reviewId: string) => {
-    const pool = getPool()
     try {
-        const result = await pool.query(`SELECT * FROM reviews WHERE id=$1`, [reviewId])
+        const result = await execute<Review>(undefined, sql`SELECT * FROM ${reviews} WHERE ${reviews.id} = ${reviewId}`)
         return result.rows[0]
     } catch (error) {
         logger.error('fetchReviewById error', { error })
@@ -99,19 +79,15 @@ export const createReviewForCustomer = async (
     body: { booking_id: string; rating: number; comment: string },
 ) => {
     const { booking_id, rating, comment } = body
-
     const booking = await findBookingById(booking_id)
     if (!booking) throw new AppError('Agendamento não encontrado', 404)
     if (booking.customer_id !== customerId) throw new AppError('Você não é o tutor deste agendamento', 403)
     if (booking.booking_status !== BookingStatus.COMPLETED) throw new AppError('O agendamento ainda não foi concluído', 400)
-
     const existingReview = await findReviewByBookingId(booking_id)
     if (existingReview) throw new AppError('Já existe uma avaliação para este agendamento', 400)
-
     const provider = booking.provider_user_id
         ? await findProviderByUserId(booking.provider_user_id)
         : null
-
     return insertReview({
         customer_id: customerId,
         provider_user_id: provider?.user_id ?? booking.provider_user_id!,

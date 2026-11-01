@@ -1,14 +1,25 @@
 import { PoolClient } from 'pg'
 import { z } from 'zod'
-import { executor, withTransaction } from '../../shared/db/transaction'
+import { withTransaction } from '../../shared/db/transaction'
+import { bound, col, execute, sql } from '../../shared/db/drizzle'
 import { AppError } from '../../shared/errors'
 import { registrationDetailsSchema, requireCompleteRegistration, SaveRegistrationInput } from './registration.schemas'
 import { CACHE_KEYS } from '../../constants'
 import { deleteCache } from '../../shared/cache/cache'
+import { updateUserNameAndPhone } from '../auth/user.service'
+import {
+    replaceProviderProfessionalTypes,
+    shareActiveProfessionalTypes,
+} from '../professional-type/professional-type.service'
+import {
+    providerRegistrationAttachments,
+    providerRegistrations,
+    providerServices,
+    providers,
+} from './provider.table'
 
 export const readRegistration = async (providerId: string, client?: PoolClient) => {
-    const db = executor(client)
-    const current = await db.query(`
+    const current = await execute(client, sql`
         SELECT COALESCE(r.name, u.name) AS name, COALESCE(r.email, u.email) AS email,
                COALESCE(r.phone_number, u.phone_number, '') AS phone_number,
                COALESCE(r.document, '') AS document, COALESCE(r.experience, '') AS experience,
@@ -17,13 +28,20 @@ export const readRegistration = async (providerId: string, client?: PoolClient) 
                COALESCE(r.professional_type_ids,
                    ARRAY(SELECT professional_type_id FROM provider_professional_types WHERE provider_id = p.id)
                ) AS professional_type_ids
-        FROM providers p INNER JOIN users u ON u.id = p.user_id
-        LEFT JOIN provider_registrations r ON r.provider_id = p.id
-        WHERE p.id = $1`, [providerId])
+        FROM ${providers} p INNER JOIN users u ON u.id = p.user_id
+        LEFT JOIN ${providerRegistrations} r ON r.provider_id = p.id
+        WHERE p.id = ${providerId}
+    `)
     if (!current.rows[0]) throw new AppError('Perfil profissional não encontrado.', 404)
-    const attachments = await db.query(`
-        SELECT id, name, mime_type, size FROM provider_registration_attachments
-        WHERE provider_id = $1 ORDER BY created_at, id`, [providerId])
+    const attachments = await execute(client, sql`
+        SELECT ${providerRegistrationAttachments.id} AS id,
+               ${providerRegistrationAttachments.name} AS name,
+               ${providerRegistrationAttachments.mime_type} AS mime_type,
+               ${providerRegistrationAttachments.size} AS size
+        FROM ${providerRegistrationAttachments}
+        WHERE ${providerRegistrationAttachments.provider_id} = ${providerId}
+        ORDER BY ${providerRegistrationAttachments.created_at}, ${providerRegistrationAttachments.id}
+    `)
     return { ...current.rows[0], attachments: attachments.rows }
 }
 
@@ -52,9 +70,10 @@ export const applySignupRegistration = (
 
 /** The caller owns the transaction; row locks serialize menu publication and changes to its types. */
 export const writeRegistration = async (client: PoolClient, providerId: string, input: SaveRegistrationInput) => {
-    const owner = await client.query(`
-        SELECT p.id, p.user_id, u.email FROM providers p INNER JOIN users u ON u.id = p.user_id
-        WHERE p.id = $1 FOR UPDATE OF p, u`, [providerId])
+    const owner = await execute<{ id: string, user_id: string, email: string }>(client, sql`
+        SELECT p.id, p.user_id, u.email FROM ${providers} p INNER JOIN users u ON u.id = p.user_id
+        WHERE p.id = ${providerId} FOR UPDATE OF p, u
+    `)
     const provider = owner.rows[0]
     if (!provider) throw new AppError('Perfil profissional não encontrado.', 404)
     if (input.email.toLowerCase() !== String(provider.email).toLowerCase()) {
@@ -63,17 +82,18 @@ export const writeRegistration = async (client: PoolClient, providerId: string, 
 
     const ids = input.professional_type_ids
     if (ids.length) {
-        const types = await client.query(`
-            SELECT id FROM professional_types WHERE id = ANY($1::uuid[]) AND is_active FOR SHARE`, [ids])
-        if (types.rowCount !== ids.length) throw new AppError('Escolha somente tipos ativos do catálogo.', 400)
+        const shared = await shareActiveProfessionalTypes(client, ids)
+        if (shared !== ids.length) throw new AppError('Escolha somente tipos ativos do catálogo.', 400)
     }
 
-    // Existing evidence IDs are references, never arbitrary file URLs or other accounts' files.
     const retainedIds = input.attachments.flatMap(file => 'id' in file ? [file.id] : [])
     if (retainedIds.length !== new Set(retainedIds).size) throw new AppError('Não repita os anexos.', 400)
-    const existing = await client.query(`
-        SELECT id, name, mime_type, size FROM provider_registration_attachments
-        WHERE provider_id = $1 AND id = ANY($2::uuid[]) FOR UPDATE`, [providerId, retainedIds])
+    const existing = await execute<{ id: string, name: string, mime_type: string, size: number }>(client, sql`
+        SELECT id, name, mime_type, size FROM ${providerRegistrationAttachments}
+        WHERE ${providerRegistrationAttachments.provider_id} = ${providerId}
+          AND id = ANY(${bound(retainedIds)}::uuid[])
+        FOR UPDATE
+    `)
     for (const file of input.attachments) {
         if (!('id' in file)) continue
         const stored = existing.rows.find(row => row.id === file.id)
@@ -83,36 +103,45 @@ export const writeRegistration = async (client: PoolClient, providerId: string, 
     }
 
     if (input.mode === 'continue') {
-        const used = await client.query(`
-            SELECT 1 FROM provider_services
-            WHERE provider_id = $1 AND is_active AND professional_type_id IS NOT NULL
-              AND NOT (professional_type_id = ANY($2::uuid[])) LIMIT 1`, [providerId, ids])
+        const used = await execute(client, sql`
+            SELECT 1 FROM ${providerServices}
+            WHERE ${providerServices.provider_id} = ${providerId}
+              AND ${providerServices.is_active}
+              AND ${providerServices.professional_type_id} IS NOT NULL
+              AND NOT (${providerServices.professional_type_id} = ANY(${bound(ids)}::uuid[]))
+            LIMIT 1
+        `)
         if (used.rowCount) throw new AppError('Este tipo está em uso por um serviço ativo. Edite os serviços antes de removê-lo.', 409)
-        await client.query(`DELETE FROM provider_professional_types
-            WHERE provider_id = $1 AND NOT (professional_type_id = ANY($2::uuid[]))`, [providerId, ids])
-        await client.query(`INSERT INTO provider_professional_types(provider_id, professional_type_id)
-            SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`, [providerId, ids])
-        await client.query('UPDATE users SET name = $2, phone_number = $3, updated_at = now() WHERE id = $1',
-            [provider.user_id, input.name, input.phone_number])
-        await client.query('UPDATE providers SET updated_at = now() WHERE id = $1', [providerId])
+        await replaceProviderProfessionalTypes(client, providerId, ids)
+        await updateUserNameAndPhone(client, provider.user_id, input.name, input.phone_number)
+        await execute(client, sql`UPDATE ${providers} SET ${col(providers.updated_at)} = now() WHERE ${providers.id} = ${providerId}`)
     }
 
-    await client.query(`
-        INSERT INTO provider_registrations (provider_id, name, email, phone_number, document,
-            experience, certifications, professional_type_ids, status)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-        ON CONFLICT(provider_id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email,
+    await execute(client, sql`
+        INSERT INTO ${providerRegistrations} (
+            provider_id, name, email, phone_number, document, experience, certifications, professional_type_ids, status
+        )
+        VALUES (
+            ${providerId}, ${input.name}, ${provider.email}, ${input.phone_number}, ${input.document},
+            ${input.experience}, ${input.certifications}, ${bound(ids)}::uuid[], ${input.mode === 'continue' ? 'completed' : 'draft'}
+        )
+        ON CONFLICT(provider_id) DO UPDATE SET
+            name = EXCLUDED.name, email = EXCLUDED.email,
             phone_number = EXCLUDED.phone_number, document = EXCLUDED.document,
             experience = EXCLUDED.experience, certifications = EXCLUDED.certifications,
-            professional_type_ids = EXCLUDED.professional_type_ids, status = EXCLUDED.status, updated_at = now()`,
-        [providerId, input.name, provider.email, input.phone_number, input.document,
-            input.experience, input.certifications, ids, input.mode === 'continue' ? 'completed' : 'draft'])
-    await client.query(`DELETE FROM provider_registration_attachments
-        WHERE provider_id = $1 AND NOT (id = ANY($2::uuid[]))`, [providerId, retainedIds])
+            professional_type_ids = EXCLUDED.professional_type_ids, status = EXCLUDED.status, updated_at = now()
+    `)
+    await execute(client, sql`
+        DELETE FROM ${providerRegistrationAttachments}
+        WHERE ${providerRegistrationAttachments.provider_id} = ${providerId}
+          AND NOT (id = ANY(${bound(retainedIds)}::uuid[]))
+    `)
     for (const file of input.attachments) {
         if ('id' in file) continue
-        await client.query(`INSERT INTO provider_registration_attachments(provider_id, name, mime_type, size, content)
-            VALUES ($1,$2,$3,$4,$5)`, [providerId, file.name, file.mime_type, file.size, Buffer.from(file.base64, 'base64')])
+        await execute(client, sql`
+            INSERT INTO ${providerRegistrationAttachments}(provider_id, name, mime_type, size, content)
+            VALUES (${providerId}, ${file.name}, ${file.mime_type}, ${file.size}, ${Buffer.from(file.base64, 'base64')})
+        `)
     }
     return readRegistration(providerId, client)
 }
@@ -120,7 +149,12 @@ export const writeRegistration = async (client: PoolClient, providerId: string, 
 export const saveRegistration = async (providerId: string, input: SaveRegistrationInput) => {
     const result = await withTransaction(client => writeRegistration(client, providerId, input))
     if (input.mode === 'continue') {
-        const services = await executor().query('SELECT service_id FROM provider_services WHERE provider_id = $1 AND service_id IS NOT NULL', [providerId])
+        const services = await execute<{ service_id: string }>(undefined, sql`
+            SELECT ${providerServices.service_id} AS service_id
+            FROM ${providerServices}
+            WHERE ${providerServices.provider_id} = ${providerId}
+              AND ${providerServices.service_id} IS NOT NULL
+        `)
         await Promise.all(services.rows.map(row => deleteCache(CACHE_KEYS.SERVICE_PROVIDERS(row.service_id))))
     }
     return result

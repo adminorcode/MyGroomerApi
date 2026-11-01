@@ -1,7 +1,8 @@
-import { getPool } from '../../config/database.config'
 import { AppError } from '../../shared/errors'
+import { col, execute, sql } from '../../shared/db/drizzle'
 import { inBrazil, locateBaseAddress } from './base-geocoder'
 import { SaveServiceLocationInput } from './provider.schemas'
+import { providers } from './provider.table'
 
 export type RadiusKm = 3 | 5 | 8 | 10
 export type TravelFeeMode = 'included' | 'on_request' | 'per_km'
@@ -63,19 +64,20 @@ const present = (row: {
     }
 }
 
-const columns = `
-    base_address, base_postal_code, base_complement, base_latitude, base_longitude,
-    radius_km, travel_fee_mode, travel_fee_per_km
-`
-
 export const readServiceLocation = async (providerId: string): Promise<ServiceLocation> => {
-    const pool = getPool()
-    const result = await pool.query(
-        `SELECT ${columns} FROM providers WHERE id = $1`,
-        [providerId],
-    )
+    const result = await execute(undefined, sql`
+        SELECT ${providers.base_address} AS base_address,
+               ${providers.base_postal_code} AS base_postal_code,
+               ${providers.base_complement} AS base_complement,
+               ${providers.base_latitude} AS base_latitude,
+               ${providers.base_longitude} AS base_longitude,
+               ${providers.radius_km} AS radius_km,
+               ${providers.travel_fee_mode} AS travel_fee_mode,
+               ${providers.travel_fee_per_km} AS travel_fee_per_km
+        FROM ${providers} WHERE ${providers.id} = ${providerId}
+    `)
     if (!result.rows[0]) throw new AppError('Perfil do groomer não encontrado', 404)
-    return present(result.rows[0])
+    return present(result.rows[0] as Parameters<typeof present>[0])
 }
 
 export const writeServiceLocation = async (
@@ -94,31 +96,20 @@ export const writeServiceLocation = async (
 
     const complement = input.complement?.trim() ? input.complement.trim() : null
     const perKm = input.travel_fee_mode === 'per_km' ? input.travel_fee_per_km : null
-    const pool = getPool()
-    const result = await pool.query(
-        `UPDATE providers SET
-            base_address = $2,
-            base_postal_code = $3,
-            base_complement = $4,
-            base_latitude = $5,
-            base_longitude = $6,
-            radius_km = $7,
-            travel_fee_mode = $8,
-            travel_fee_per_km = $9
-         WHERE id = $1
-         RETURNING ${columns}`,
-        [
-            providerId,
-            input.address.trim(),
-            postalCode,
-            complement,
-            resolved.latitude,
-            resolved.longitude,
-            input.radius_km,
-            input.travel_fee_mode,
-            perKm,
-        ],
-    )
+    const result = await execute(undefined, sql`
+        UPDATE ${providers} SET
+            ${col(providers.base_address)} = ${input.address.trim()},
+            ${col(providers.base_postal_code)} = ${postalCode},
+            ${col(providers.base_complement)} = ${complement},
+            ${col(providers.base_latitude)} = ${resolved.latitude},
+            ${col(providers.base_longitude)} = ${resolved.longitude},
+            ${col(providers.radius_km)} = ${input.radius_km},
+            ${col(providers.travel_fee_mode)} = ${input.travel_fee_mode},
+            ${col(providers.travel_fee_per_km)} = ${perKm}
+         WHERE ${providers.id} = ${providerId}
+         RETURNING base_address, base_postal_code, base_complement, base_latitude, base_longitude,
+                   radius_km, travel_fee_mode, travel_fee_per_km
+    `)
     if (!result.rows[0]) throw new AppError('Perfil do groomer não encontrado', 404)
-    return present(result.rows[0])
+    return present(result.rows[0] as Parameters<typeof present>[0])
 }

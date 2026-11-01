@@ -1,6 +1,7 @@
-import { getPool } from '../../config/database.config'
+import { execute, sql } from '../../shared/db/drizzle'
 import { AppError } from '../../shared/errors'
 import { addressKey, addressMatchesPostal, geocodeQuery, postalAddressLine, PostalPlace } from './postal-address'
+import { geocodeCache } from './provider.table'
 
 export type CoveragePoint = {
     latitude: number
@@ -25,18 +26,21 @@ const fetchJson = async (url: string, headers?: HeadersInit) => {
 }
 
 const readCache = async (postalCode: string, key: string) => {
-    const result = await getPool().query(
-        `SELECT latitude, longitude FROM geocode_cache WHERE postal_code = $1 AND address_key = $2`,
-        [postalCode, key],
-    )
+    const result = await execute<{ latitude: string | number, longitude: string | number }>(undefined, sql`
+        SELECT ${geocodeCache.latitude} AS latitude, ${geocodeCache.longitude} AS longitude
+        FROM ${geocodeCache}
+        WHERE ${geocodeCache.postal_code} = ${postalCode} AND ${geocodeCache.address_key} = ${key}
+    `)
     return pointFrom(result.rows[0])
 }
 
 const readCacheByAddress = async (key: string) => {
-    const result = await getPool().query(
-        `SELECT latitude, longitude FROM geocode_cache WHERE address_key = $1 LIMIT 1`,
-        [key],
-    )
+    const result = await execute<{ latitude: string | number, longitude: string | number }>(undefined, sql`
+        SELECT ${geocodeCache.latitude} AS latitude, ${geocodeCache.longitude} AS longitude
+        FROM ${geocodeCache}
+        WHERE ${geocodeCache.address_key} = ${key}
+        LIMIT 1
+    `)
     return pointFrom(result.rows[0])
 }
 
@@ -46,14 +50,13 @@ const pointFrom = (row?: { latitude: string | number, longitude: string | number
 }
 
 const writeCache = async (postalCode: string, key: string, latitude: number, longitude: number) => {
-    await getPool().query(
-        `INSERT INTO geocode_cache (postal_code, address_key, latitude, longitude)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (postal_code, address_key) DO UPDATE SET
+    await execute(undefined, sql`
+        INSERT INTO ${geocodeCache} (postal_code, address_key, latitude, longitude)
+        VALUES (${postalCode}, ${key}, ${latitude}, ${longitude})
+        ON CONFLICT (postal_code, address_key) DO UPDATE SET
             latitude = EXCLUDED.latitude,
-            longitude = EXCLUDED.longitude`,
-        [postalCode, key, latitude, longitude],
-    )
+            longitude = EXCLUDED.longitude
+    `)
 }
 
 const readViaCep = async (postalCode: string): Promise<PostalPlace | null> => {

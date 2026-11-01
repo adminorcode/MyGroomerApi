@@ -1,48 +1,44 @@
+import { SQL } from 'drizzle-orm'
 import { PoolClient } from 'pg'
-import { executor } from '../../shared/db/transaction'
+import { col, execute, sql } from '../../shared/db/drizzle'
 import { QueryType } from '../../types/pagination.types'
 import { CreatePaymentInput, Payment, PaymentStatus } from './payment.types'
+import { payments } from './payment.table'
 
 export const insertPayment = async (paymentInput: CreatePaymentInput, client?: PoolClient): Promise<Payment | null> => {
-    const result = await executor(client).query(
-        `
-        INSERT INTO payments (customer_id, booking_id, amount, payment_date, payment_status, paystack_reference)
-        VALUES ($1, $2, $3, $4, $5, $6)
+    const result = await execute<Payment>(client, sql`
+        INSERT INTO ${payments} (customer_id, booking_id, amount, payment_date, payment_status, paystack_reference)
+        VALUES (
+            ${paymentInput.customer_id},
+            ${paymentInput.booking_id},
+            ${paymentInput.amount},
+            ${paymentInput.payment_date},
+            ${PaymentStatus.PENDING},
+            ${paymentInput.paystack_reference}
+        )
         RETURNING *
-        `,
-        [
-            paymentInput.customer_id,
-            paymentInput.booking_id,
-            paymentInput.amount,
-            paymentInput.payment_date,
-            PaymentStatus.PENDING,
-            paymentInput.paystack_reference,
-        ],
-    )
+    `)
     return result.rows[0] || null
 }
 
 export const lockPaymentByReference = async (reference: string, client: PoolClient): Promise<Payment | null> => {
-    const result = await client.query(
-        `SELECT * FROM payments WHERE paystack_reference=$1 FOR UPDATE`,
-        [reference],
-    )
+    const result = await execute<Payment>(client, sql`
+        SELECT * FROM ${payments} WHERE ${payments.paystack_reference} = ${reference} FOR UPDATE
+    `)
     return result.rows[0] || null
 }
 
 export const findPaymentByReference = async (reference: string, client?: PoolClient): Promise<Payment | null> => {
-    const result = await executor(client).query(
-        `SELECT * FROM payments WHERE paystack_reference=$1`,
-        [reference],
-    )
+    const result = await execute<Payment>(client, sql`
+        SELECT * FROM ${payments} WHERE ${payments.paystack_reference} = ${reference}
+    `)
     return result.rows[0] || null
 }
 
 export const findPaymentByBookingId = async (bookingId: string, client?: PoolClient): Promise<Payment | null> => {
-    const result = await executor(client).query(
-        `SELECT * FROM payments WHERE booking_id=$1`,
-        [bookingId],
-    )
+    const result = await execute<Payment>(client, sql`
+        SELECT * FROM ${payments} WHERE ${payments.booking_id} = ${bookingId}
+    `)
     return result.rows[0] || null
 }
 
@@ -51,42 +47,26 @@ export const updatePaymentStatus = async (
     paymentStatus: PaymentStatus,
     client?: PoolClient,
 ): Promise<Payment | null> => {
-    const result = await executor(client).query(
-        `
-        UPDATE payments
-        SET payment_status=$1
-        WHERE paystack_reference=$2
+    const result = await execute<Payment>(client, sql`
+        UPDATE ${payments}
+        SET ${col(payments.payment_status)} = ${paymentStatus}
+        WHERE ${payments.paystack_reference} = ${reference}
         RETURNING *
-        `,
-        [paymentStatus, reference],
-    )
+    `)
     return result.rows[0] || null
 }
 
 export const fetchPayments = async (customerId: string, query: QueryType, client?: PoolClient): Promise<Payment[] | null> => {
-    const conditions = []
-    const values = []
-    let index = 1
-
-    if (customerId) {
-        conditions.push(`payments.customer_id=$${index++}`)
-        values.push(customerId)
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const conditions: SQL[] = []
+    if (customerId) conditions.push(sql`${payments.customer_id} = ${customerId}`)
+    const whereClause = conditions.length > 0 ? sql`WHERE ${sql.join(conditions, sql` AND `)}` : sql``
     const page = query.page || 1
     const limit = query.limit || 10
     const offset = (page - 1) * limit
-    values.push(limit)
-    values.push(offset)
-
-    const result = await executor(client).query(
-        `
-        SELECT * FROM payments
+    const result = await execute<Payment>(client, sql`
+        SELECT * FROM ${payments}
         ${whereClause}
-        LIMIT $${index++} OFFSET $${index++}
-        `,
-        values,
-    )
+        LIMIT ${limit} OFFSET ${offset}
+    `)
     return result.rows || null
 }

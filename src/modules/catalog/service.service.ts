@@ -1,49 +1,36 @@
-import { getPool } from '../../config/database.config'
+import { SQL } from 'drizzle-orm'
+import { PoolClient } from 'pg'
 import { logger } from '../../config/logger.config'
 import { CACHE_KEYS, CACHE_TTL } from '../../constants'
 import { deleteCache, deleteCachePattern, getCache, setCache } from '../../shared/cache/cache'
+import { col, execute, sql } from '../../shared/db/drizzle'
 import { QueryType } from '../../types/pagination.types'
+import { categories, services } from './catalog.table'
 import { CreateService, Service, ServiceWithCategory } from './service.types'
 
 export const fetchAllServices = async (categoryId: string | undefined, query: QueryType): Promise<ServiceWithCategory[] | null> => {
-    const conditions = []
-    const values = []
-    let index = 1
-
-    if (categoryId) {
-        conditions.push(`services.category_id = $${index++}`)
-        values.push(categoryId)
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const conditions: SQL[] = []
+    if (categoryId) conditions.push(sql`${services.category_id} = ${categoryId}`)
+    const whereClause = conditions.length > 0 ? sql`WHERE ${sql.join(conditions, sql` AND `)}` : sql``
     const page = query.page || 1
     const limit = query.limit || 10
     const offset = (page - 1) * limit
-    values.push(limit)
-    values.push(offset)
-
     const cacheKey = CACHE_KEYS.SERVICES_ALL(`${categoryId || 'all'}_page${page}_limit${limit}`)
     const cached = await getCache<ServiceWithCategory[]>(cacheKey)
     if (cached) {
         logger.info('Services served from cache')
         return cached
     }
-
-    const pool = getPool()
-    const result = await pool.query(
-        `
+    const result = await execute<ServiceWithCategory>(undefined, sql`
         SELECT
-            services.*,
-            categories.name AS category_name,
-            categories.description AS category_description
-        FROM services
-        LEFT JOIN categories ON services.category_id = categories.id
+            ${services}.*,
+            ${categories.name} AS category_name,
+            ${categories.description} AS category_description
+        FROM ${services}
+        LEFT JOIN ${categories} ON ${services.category_id} = ${categories.id}
         ${whereClause}
-        LIMIT $${index++} OFFSET $${index++}
-        `,
-        values,
-    )
-
+        LIMIT ${limit} OFFSET ${offset}
+    `)
     await setCache(cacheKey, result.rows, CACHE_TTL.SERVICES)
     return result.rows || null
 }
@@ -55,24 +42,17 @@ export const findServiceById = async (serviceId: string): Promise<ServiceWithCat
             logger.info(`Service with id: ${serviceId} served from cache`)
             return cached
         }
-        const pool = getPool()
-        const result = await pool.query(
-            `
+        const result = await execute<ServiceWithCategory>(undefined, sql`
             SELECT
-                services.*,
-                categories.name AS category_name,
-                categories.description AS category_description
-            FROM services
-            LEFT JOIN categories ON services.category_id = categories.id
-            WHERE services.id=$1
-            `,
-            [serviceId],
-        )
-
+                ${services}.*,
+                ${categories.name} AS category_name,
+                ${categories.description} AS category_description
+            FROM ${services}
+            LEFT JOIN ${categories} ON ${services.category_id} = ${categories.id}
+            WHERE ${services.id} = ${serviceId}
+        `)
         const service = result.rows[0] || null
-        if (service) {
-            await setCache(CACHE_KEYS.SERVICE_BY_ID(serviceId), service, CACHE_TTL.SERVICES)
-        }
+        if (service) await setCache(CACHE_KEYS.SERVICE_BY_ID(serviceId), service, CACHE_TTL.SERVICES)
         return service
     } catch (error) {
         logger.error('findServiceById error', { error })
@@ -81,15 +61,11 @@ export const findServiceById = async (serviceId: string): Promise<ServiceWithCat
 }
 
 export const insertService = async (input: CreateService): Promise<Service | null> => {
-    const pool = getPool()
-    const result = await pool.query(
-        `
-        INSERT INTO services (name, image, description, category_id)
-        VALUES ($1, $2, $3, $4)
+    const result = await execute<Service>(undefined, sql`
+        INSERT INTO ${services} (name, image, description, category_id)
+        VALUES (${input.name}, ${input.image}, ${input.description}, ${input.category_id})
         RETURNING *
-        `,
-        [input.name, input.image, input.description, input.category_id],
-    )
+    `)
     await deleteCachePattern('services:all:*')
     return result.rows[0] || null
 }
@@ -97,55 +73,35 @@ export const insertService = async (input: CreateService): Promise<Service | nul
 export const modifyService = async (serviceId: string, update: CreateService): Promise<Service | null> => {
     await deleteCachePattern('services:all:*')
     await deleteCache(CACHE_KEYS.SERVICE_BY_ID(serviceId))
-
-    const fields = []
-    const values = []
-    let index = 1
-
-    if (update.name) {
-        fields.push(`name = $${index++}`)
-        values.push(update.name)
-    }
-
-    if (update.image) {
-        fields.push(`image = $${index++}`)
-        values.push(update.image)
-    }
-
-    if (update.description) {
-        fields.push(`description = $${index++}`)
-        values.push(update.description)
-    }
-
-    if (update.category_id) {
-        fields.push(`category_id = $${index++}`)
-        values.push(update.category_id)
-    }
-
-    values.push(serviceId)
-
-    const pool = getPool()
-    const result = await pool.query(
-        `
-        UPDATE services
-        SET ${fields.join(', ')}
-        WHERE id=$${index}
+    const assignments: SQL[] = []
+    if (update.name) assignments.push(sql`${col(services.name)} = ${update.name}`)
+    if (update.image) assignments.push(sql`${col(services.image)} = ${update.image}`)
+    if (update.description) assignments.push(sql`${col(services.description)} = ${update.description}`)
+    if (update.category_id) assignments.push(sql`${col(services.category_id)} = ${update.category_id}`)
+    const result = await execute<Service>(undefined, sql`
+        UPDATE ${services}
+        SET ${sql.join(assignments, sql`, `)}
+        WHERE ${services.id} = ${serviceId}
         RETURNING *
-        `,
-        values,
-    )
-
+    `)
     await setCache(CACHE_KEYS.SERVICE_BY_ID(serviceId), result.rows[0], CACHE_TTL.SERVICES)
     return result.rows[0] || null
 }
 
 export const deleteService = async (serviceId: string): Promise<Service | null> => {
-    const pool = getPool()
-    const result = await pool.query(
-        `DELETE FROM services WHERE id=$1 RETURNING *`,
-        [serviceId],
-    )
+    const result = await execute<Service>(undefined, sql`
+        DELETE FROM ${services} WHERE ${services.id} = ${serviceId} RETURNING *
+    `)
     await deleteCachePattern('services:all:*')
     await deleteCache(CACHE_KEYS.SERVICE_BY_ID(serviceId))
     return result.rows[0] || null
+}
+
+export const findServiceCategoryId = async (serviceId: string, client?: PoolClient) => {
+    const result = await execute<{ id: string, category_id: string | null }>(client, sql`
+        SELECT ${services.id} AS id, ${services.category_id} AS category_id
+        FROM ${services}
+        WHERE ${services.id} = ${serviceId}
+    `)
+    return result.rows[0] ?? null
 }
