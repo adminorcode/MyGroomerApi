@@ -4,6 +4,7 @@ import { AppError } from '../../shared/errors'
 import { Role } from '../auth/user.types'
 import { assertBookingParticipant, findBookingById } from '../booking/booking.service'
 import { findPaymentByBookingId, recordPayment } from './payment.service'
+import { paymentCallbackUrl, paymentReference } from '../../config/app.config'
 
 type PaymentActor = {
     id: string
@@ -28,12 +29,12 @@ export const initializePaymentForBooking = async (actor: PaymentActor | undefine
     if (existingPayment) return { kind: 'existing' as const, payment: existingPayment }
 
     const price = Number(result.price)
-    const reference = `boame_${bookingId}_${Date.now()}`
+    const reference = paymentReference(bookingId)
     const initialized = await getPaymentGateway().initializePayment({
         email: result.customer_email,
         amountMinor: Math.round(price * 100),
         reference,
-        callbackUrl: 'https://boame.app/payment/callback',
+        callbackUrl: paymentCallbackUrl(),
     })
     await recordPayment({
         customer_id: result.customer_id,

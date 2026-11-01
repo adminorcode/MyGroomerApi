@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { forgotPassword, loginUser, registerUser, resetUserPassword, verifyEmail } from "./auth.service";
 import { generateJwtToken } from "../../shared/auth/jwt";
 import { Role, User } from "./user.types";
+import { appDeepLink } from "../../config/app.config";
 
 
 export const register = async (req:Request, res:Response) => {
@@ -43,5 +44,5 @@ export const googleAuthCallback = async (req:Request, res:Response) => {
     }
     const token = generateJwtToken(payload)
 
-    res.redirect(`boame://auth/callback?token=${token}`)
+    res.redirect(`${appDeepLink('auth/callback')}?token=${token}`)
 }

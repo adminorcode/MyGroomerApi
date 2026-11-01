@@ -20,7 +20,7 @@ ON ic.name = s.category_name;
 INSERT INTO users (name, email, password, role, email_verified_at)
 VALUES (
     'Admin',
-    'admin@boame.app',
+    'admin@tiodepet.local',
     '$2b$10$WxmqWhicOrbJIRZ2ntNVJeP7IggxgO.CjDkf8ChAWdWmNT72eSpfG',   -- password:admin123
     'admin',
     NOW()

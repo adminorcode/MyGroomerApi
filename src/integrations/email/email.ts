@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { appName } from '../../config/app.config'
 import { isLocalTestMode } from '../../config/runtime.config'
 import { AppError } from '../../shared/errors'
 
@@ -29,7 +30,7 @@ export const sendPasswordResetEmail = async (email: string, token: string) => {
     await sendEmail(email, {
         subject: 'Password Reset',
         html: `
-            <p>You requested a password reset for your Boame account.</p>
+            <p>You requested a password reset for your ${appName} account.</p>
             <a href="${process.env.CLIENT_URL}/reset-password?token=${token}">Reset your password</a>
             <p>This link expires in 24 hours.</p>
             <p>If you didn't request this, ignore this email.</p>

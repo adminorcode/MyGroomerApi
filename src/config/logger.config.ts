@@ -1,4 +1,5 @@
 import winston from "winston";
+import { appServiceName } from "./app.config";
 
 const isDevelopment = process.env.NODE_ENV != 'production'
 
@@ -10,7 +11,7 @@ export const logger = winston.createLogger({
         winston.format.errors({stack: true}),
         winston.format.json()
     ),
-    defaultMeta: {service: 'boame-api'},
+    defaultMeta: {service: appServiceName},
     transports:[
         // error logs only
         new winston.transports.File({

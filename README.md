@@ -1,10 +1,10 @@
-# Boame API
+# API do Tio de Pet
 
 Para acrescentar uma entidade com CRUD, siga [docs/adding-an-entity.md](docs/adding-an-entity.md).
 
-A service marketplace backend that connects customers to vetted providers for domestic and commercial services — starting with car wash and home cleaning, with plans to expand across more service categories.
+Backend do **Tio de Pet**: conecta tutores a profissionais de pet para atendimento em domicílio no Brasil. O nome público, o esquema de deep link e o prefixo das referências de pagamento ficam em `src/config/app.config.ts` (`APP_NAME`, `APP_SCHEME`, `APP_REFERENCE_PREFIX`).
 
-Built by **Asante** as a full-stack portfolio project demonstrating production-grade backend architecture. Pairs with the [Boame Client](https://github.com/littlegod20/boa_me_client) (React Native / Expo).
+O repositório é [MyGroomerApi](https://github.com/adminorcode/MyGroomerApi). O aplicativo correspondente é [MyGroomerApp](https://github.com/adminorcode/MyGroomerApp).
 
 ---
 
@@ -222,8 +222,8 @@ GET    /api/v1/conversations/:conversationId/messages
 
 ```bash
 # clone the repo
-git clone https://github.com/yourusername/boame-server
-cd boame-server
+git clone https://github.com/adminorcode/MyGroomerApi.git
+cd MyGroomerApi
 
 # install dependencies
 npm install
@@ -247,13 +247,17 @@ npm run dev
 PORT=3000
 NODE_ENV=development
 
-DATABASE_URL=postgresql://postgres:password@localhost:5432/boame_db
+DATABASE_URL=postgresql://postgres:password@localhost:5432/mygroomer_dev
 
 REDIS_URL=redis://localhost:6379
 
 RABBITMQ_URL=amqp://guest:guest@localhost:5672
 
 JWT_SECRET=your_jwt_secret
+
+APP_NAME=Tio de Pet
+APP_SCHEME=tiodepet
+APP_REFERENCE_PREFIX=tiodepet
 
 PAYSTACK_SECRET_KEY=sk_test_...
 
