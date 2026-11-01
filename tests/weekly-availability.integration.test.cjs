@@ -10,6 +10,14 @@ const password = 'admin'
 let tutor
 let groomer
 let snapshot
+let weekdaySnapshot = []
+const createdAppointments = []
+const nextMonday = new Date(Date.now() + 90 * 86400000)
+while (nextMonday.getUTCDay() !== 1) nextMonday.setUTCDate(nextMonday.getUTCDate() + 1)
+const mondayDate = nextMonday.toISOString().slice(0, 10)
+const nextTuesday = new Date(nextMonday)
+nextTuesday.setUTCDate(nextTuesday.getUTCDate() + 1)
+const tuesdayDate = nextTuesday.toISOString().slice(0, 10)
 
 const request = async (route, method = 'GET', body, token) => {
     const response = await fetch(base + route, {
@@ -58,7 +66,7 @@ const clocks = async (gap) => {
     const saved = await request('/providers/weekly-availability', 'PUT', routine({ travel_gap_minutes: gap }), groomer)
     assert.equal(saved.status, 200, JSON.stringify(saved.body))
     const slots = await request(
-        '/providers/weekly-availability/slots?date=2026-11-02&duration_minutes=60',
+        `/providers/weekly-availability/slots?date=${mondayDate}&duration_minutes=60`,
         'GET',
         undefined,
         groomer,
@@ -83,12 +91,17 @@ before(async () => {
     )
     snapshot = current.rows[0]
     assert.ok(snapshot, 'Conta de demonstração sem perfil profissional')
+    weekdaySnapshot = (await pool.query('SELECT * FROM provider_weekdays WHERE provider_id = $1', [providerId])).rows
 })
 
 after(async () => {
-    await pool.query('DELETE FROM provider_manual_appointments WHERE provider_id = $1', [providerId])
-    await pool.query('DELETE FROM provider_weekdays WHERE provider_id = $1', [providerId])
+    if (createdAppointments.length) await pool.query('DELETE FROM provider_manual_appointments WHERE id = ANY($1::uuid[])', [createdAppointments])
     if (snapshot) {
+        await pool.query('DELETE FROM provider_weekdays WHERE provider_id = $1', [providerId])
+        for (const row of weekdaySnapshot) {
+            await pool.query(`INSERT INTO provider_weekdays(provider_id, weekday, start_minute, end_minute, break_start_minute, break_end_minute)
+                VALUES ($1,$2,$3,$4,$5,$6)`, [providerId, row.weekday, row.start_minute, row.end_minute, row.break_start_minute, row.break_end_minute])
+        }
         await pool.query(
             'UPDATE providers SET travel_gap_minutes = $2, manual_fit = $3 WHERE id = $1',
             [providerId, snapshot.travel_gap_minutes, snapshot.manual_fit],
@@ -127,14 +140,14 @@ test('disabled monday offers nothing and the saved gap separates slots', async (
     assert.equal(saved.status, 200)
     assert.equal(saved.body.data.days.mon.enabled, false)
     const slots = await request(
-        '/providers/weekly-availability/slots?date=2026-11-02&duration_minutes=60',
+        `/providers/weekly-availability/slots?date=${mondayDate}&duration_minutes=60`,
         'GET',
         undefined,
         groomer,
     )
     assert.deepEqual(slots.body.data.slots, [])
     const tuesday = await request(
-        '/providers/weekly-availability/slots?date=2026-11-03&duration_minutes=60',
+        `/providers/weekly-availability/slots?date=${tuesdayDate}&duration_minutes=60`,
         'GET',
         undefined,
         groomer,
@@ -146,8 +159,8 @@ test('manual fit refuses an appointment outside the routine until it is enabled'
     const saved = await request('/providers/weekly-availability', 'PUT', routine({ manual_fit: false }), groomer)
     assert.equal(saved.status, 200)
     const outside = {
-        starts_at: '2026-11-02T14:00:00-03:00',
-        ends_at: '2026-11-02T14:30:00-03:00',
+        starts_at: `${mondayDate}T14:00:00-03:00`,
+        ends_at: `${mondayDate}T14:30:00-03:00`,
     }
     const refused = await request('/providers/weekly-availability/appointments', 'POST', outside, groomer)
     assert.equal(refused.status, 409)
@@ -156,16 +169,17 @@ test('manual fit refuses an appointment outside the routine until it is enabled'
     assert.equal(enabled.status, 200)
     const created = await request('/providers/weekly-availability/appointments', 'POST', outside, groomer)
     assert.equal(created.status, 201, JSON.stringify(created.body))
+    createdAppointments.push(created.body.data.id)
     const again = await request('/providers/weekly-availability', 'PUT', routine({ manual_fit: false }), groomer)
     assert.equal(again.status, 200)
     const refusedAgain = await request('/providers/weekly-availability/appointments', 'POST', {
-        starts_at: '2026-11-02T15:00:00-03:00',
-        ends_at: '2026-11-02T15:30:00-03:00',
+        starts_at: `${mondayDate}T15:00:00-03:00`,
+        ends_at: `${mondayDate}T15:30:00-03:00`,
     }, groomer)
     assert.equal(refusedAgain.status, 409)
     const count = await pool.query(
-        'SELECT count(*)::int AS total FROM provider_manual_appointments WHERE provider_id = $1',
-        [providerId],
+        'SELECT count(*)::int AS total FROM provider_manual_appointments WHERE id = ANY($1::uuid[])',
+        [createdAppointments],
     )
     assert.equal(count.rows[0].total, 1)
 })

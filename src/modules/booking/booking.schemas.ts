@@ -1,5 +1,12 @@
 import { z } from 'zod'
 import { BookingStatus } from './booking.types'
+import { weekdayOf } from '../provider/weekly-availability.slots'
+
+export const bookingSlotsQuerySchema = z.object({
+    provider_service_id: z.uuid('Serviço do groomer inválido'),
+    pet_id: z.uuid('Selecione um pet'),
+    date: z.string().refine(value => weekdayOf(value) !== null, { message: 'Informe uma data válida no formato YYYY-MM-DD' }),
+}).strict()
 
 export const createBookingSchema = z.object({
     pet_id: z.uuid('Selecione um pet'),

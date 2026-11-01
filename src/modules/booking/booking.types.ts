@@ -19,6 +19,8 @@ export interface Booking{
     pet_notes?: string | null
     provider_service_id:string
     scheduled_at:Date
+    duration_minutes?: number | null
+    service_price?: number | null
     booking_status: BookingStatus
     customer_location:string
     customer_latitude?: number
@@ -39,6 +41,8 @@ export type CreateBookingInput = {
     pet_id:string
     provider_service_id:string
     scheduled_at: Date | string
+    duration_minutes?: number
+    service_price?: number
     customer_location:string
     customer_latitude?: number
     customer_longitude?: number

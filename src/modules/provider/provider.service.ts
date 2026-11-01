@@ -139,10 +139,10 @@ export const insertProviderService = async (provider_id:string, provider_service
     }
 }
 
-export const findProviderServiceById = async(provider_service_id:string):Promise<ProviderService | null> => {
+export const findProviderServiceById = async(provider_service_id:string, client?: PoolClient, lock = false):Promise<ProviderService | null> => {
     try {
-        const pool = getPool()
-        const result = await pool.query(`SELECT * FROM provider_services WHERE id=$1`,[provider_service_id])
+        const pool = executor(client)
+        const result = await pool.query(`SELECT * FROM provider_services WHERE id=$1${lock && client ? ' FOR SHARE' : ''}`,[provider_service_id])
         return result.rows[0] || null
     } catch (error) {
         logger.error('findProviderServiceById error', { error })

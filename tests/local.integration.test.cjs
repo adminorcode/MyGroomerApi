@@ -13,6 +13,21 @@ const created = { users:[], bookings:[], messages:[], offers:[], pets:[] }
 const password = 'LocalTest#2026'
 const fixturePassword = 'admin'
 let tutor, groomer, outsider
+let routineSnapshot
+let weekdaySnapshot = []
+
+const nextSlot = async (petId, dayOffset) => {
+    for (let offset = dayOffset; offset < dayOffset + 14; offset++) {
+        const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+        }).formatToParts(new Date(Date.now() + offset * 86400000)).map(part => [part.type, part.value]))
+        const date = `${parts.year}-${parts.month}-${parts.day}`
+        const response = await request(`/bookings/slots?provider_service_id=${id(10)}&pet_id=${petId}&date=${date}`, 'GET', undefined, tutor)
+        assert.equal(response.status, 200, JSON.stringify(response.body))
+        if (response.body.data.slots.length) return response.body.data.slots[0]
+    }
+    throw new Error('No available slot in the configured fixture routine')
+}
 
 const request = async (route, method='GET', body, token) => {
     const response = await fetch(base+route,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(10000)})
@@ -38,6 +53,14 @@ before(async () => {
     assert.deepEqual(runtime.body.data,{localTest:true,googleAuthEnabled:false,paymentsEnabled:false})
     tutor=await login('tutor@email.com')
     groomer=await login('groomer@email.com')
+    routineSnapshot = (await pool.query('SELECT travel_gap_minutes, manual_fit FROM providers WHERE id = $1', [id(3)])).rows[0]
+    weekdaySnapshot = (await pool.query('SELECT * FROM provider_weekdays WHERE provider_id = $1', [id(3)])).rows
+    const routine = await request('/providers/weekly-availability', 'PUT', {
+        days: Object.fromEntries(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(key => [key, {
+            enabled: true, start: '09:00', end: '18:00', break_start: '12:00', break_end: '13:00',
+        }])), travel_gap_minutes: 30, manual_fit: false,
+    }, groomer)
+    assert.equal(routine.status, 200)
     const email=`integration-${crypto.randomUUID()}@mygroomer.test`
     const signup=await request('/auth/register','POST',{name:'Integration test only',email,password,role:'customer',phone_number:'+5511987654321',accepted_terms:true})
     assert.equal(signup.status,201)
@@ -53,6 +76,14 @@ after(async () => {
     if(created.pets.length) await pool.query('DELETE FROM pets WHERE id=ANY($1::uuid[])',[created.pets])
     if(created.offers.length) await pool.query('DELETE FROM provider_services WHERE id=ANY($1::uuid[])',[created.offers])
     if(created.users.length) await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])',[created.users])
+    if (routineSnapshot) {
+        await pool.query('DELETE FROM provider_weekdays WHERE provider_id = $1', [id(3)])
+        for (const row of weekdaySnapshot) {
+            await pool.query(`INSERT INTO provider_weekdays(provider_id, weekday, start_minute, end_minute, break_start_minute, break_end_minute)
+                VALUES ($1,$2,$3,$4,$5,$6)`, [id(3), row.weekday, row.start_minute, row.end_minute, row.break_start_minute, row.break_end_minute])
+        }
+        await pool.query('UPDATE providers SET travel_gap_minutes = $2, manual_fit = $3 WHERE id = $1', [id(3), routineSnapshot.travel_gap_minutes, routineSnapshot.manual_fit])
+    }
     await pool.end()
 })
 
@@ -145,16 +176,17 @@ test('tutor pet is private, optional photo is omitted, and a saved pet is reused
     assert.equal(updated.status,200)
     assert.equal(updated.body.data.notes,'Tosa na tesoura')
     assert.equal(updated.body.data.photo_url,null)
-    const scheduledAt=new Date(Date.now()+86400000*8).toISOString()
+    const scheduledAt=await nextSlot(pet.id, 8)
     const bookingBody={pet_id:pet.id,provider_service_id:id(10),scheduled_at:scheduledAt,customer_location:'Integration test address'}
     assert.equal((await request('/bookings','POST',{provider_service_id:id(10),scheduled_at:scheduledAt,customer_location:'Integration test address'},tutor)).status,400)
     assert.equal((await request('/bookings','POST',bookingBody,outsider)).status,404)
     const before=await pool.query('SELECT count(*)::int AS total FROM pets WHERE owner_id=$1',[tutorUser.rows[0].id])
     const first=await request('/bookings','POST',bookingBody,tutor)
-    const second=await request('/bookings','POST',{...bookingBody,scheduled_at:new Date(Date.now()+86400000*9).toISOString()},tutor)
-    assert.equal(first.status,201)
-    assert.equal(second.status,201)
-    created.bookings.push(first.body.data.booking.id,second.body.data.booking.id)
+    assert.equal(first.status,201,JSON.stringify(first.body))
+    created.bookings.push(first.body.data.booking.id)
+    const second=await request('/bookings','POST',{...bookingBody,scheduled_at:await nextSlot(pet.id, 9)},tutor)
+    assert.equal(second.status,201,JSON.stringify(second.body))
+    created.bookings.push(second.body.data.booking.id)
     assert.equal(first.body.data.booking.pet_id,pet.id)
     assert.equal(second.body.data.booking.pet_id,pet.id)
     const after=await pool.query('SELECT count(*)::int AS total FROM pets WHERE owner_id=$1',[tutorUser.rows[0].id])
@@ -168,7 +200,7 @@ test('local booking can be confirmed and cancelled without any payment',async()=
     const pet=await request('/pets','POST',{name:'Pet do agendamento',species:'cat',breed:'SRD',size:'small',age_years:2},tutor)
     assert.equal(pet.status,201)
     created.pets.push(pet.body.data.id)
-    const scheduledAt=new Date(Date.now()+86400000*7).toISOString()
+    const scheduledAt=await nextSlot(pet.body.data.id, 7)
     const result=await request('/bookings','POST',{pet_id:pet.body.data.id,provider_service_id:id(10),scheduled_at:scheduledAt,customer_location:'Integration test address'},tutor)
     assert.equal(result.status,201)
     const booking=result.body.data.booking

@@ -43,6 +43,12 @@ export interface ProviderService {
     price: number
     is_active?: boolean
     professional_type_id?: string | null
+    price_small?: number | null
+    price_medium?: number | null
+    price_large?: number | null
+    duration_small_minutes?: number | null
+    duration_medium_minutes?: number | null
+    duration_large_minutes?: number | null
     created_at?: string
     updated_at?: string
 }

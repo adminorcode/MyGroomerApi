@@ -20,7 +20,11 @@ export const paystackPaymentGateway: PaymentGateway = {
                 reference: input.reference,
                 callback_url: input.callbackUrl,
             },
-            { headers: paystackHeaders() },
+            {
+                headers: paystackHeaders(),
+                timeout: 10_000,
+                signal: AbortSignal.timeout(10_000),
+            },
         )
         const authorizationUrl = initialize.data?.data?.authorization_url
         if (!authorizationUrl) throw new AppError('Payment initialization failed!', 500)

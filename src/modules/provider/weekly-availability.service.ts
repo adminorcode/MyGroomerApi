@@ -1,16 +1,16 @@
 import { randomUUID } from 'crypto'
 import { PoolClient } from 'pg'
 import { AppError } from '../../shared/errors'
-import { withTransaction } from '../../shared/db/transaction'
-import { getPool } from '../../config/database.config'
+import { executor, withTransaction } from '../../shared/db/transaction'
+import { lockProviderAgenda, readAgendaOccupancy } from './agenda.service'
 import {
     DayWindow,
-    OccupiedInterval,
     WEEKDAY_KEYS,
     WeekdayKey,
     clockToMinutes,
     dayIssue,
     generateStartMinutes,
+    intervalConflicts,
     routineCovers,
     saoPauloParts,
     slotIso,
@@ -75,8 +75,8 @@ const presentDay = (row: {
     break_end: row.break_end_minute == null ? null : minutesToClock(row.break_end_minute),
 })
 
-export const readWeeklyAvailability = async (providerId: string): Promise<WeeklyAvailability> => {
-    const pool = getPool()
+export const readWeeklyAvailability = async (providerId: string, client?: PoolClient): Promise<WeeklyAvailability> => {
+    const pool = executor(client)
     const provider = await pool.query(
         `SELECT travel_gap_minutes, manual_fit FROM providers WHERE id = $1`,
         [providerId],
@@ -157,30 +157,17 @@ export const readWeeklySlots = async (
     providerId: string,
     date: string,
     durationMinutes: number,
+    client?: PoolClient,
 ): Promise<string[]> => {
     const key = weekdayOf(date)
     if (!key) throw new AppError('Informe a data.', 400)
-    const routine = await readWeeklyAvailability(providerId)
+    const routine = await readWeeklyAvailability(providerId, client)
     if (routine.travel_gap_minutes == null) {
         throw new AppError('Salve a rotina antes de gerar horários.', 409)
     }
     const day = routine.days[key]
     if (!day.enabled) return []
-    const pool = getPool()
-    const occupiedRows = await pool.query(
-        `SELECT starts_at, ends_at FROM provider_manual_appointments
-         WHERE provider_id = $1
-           AND starts_at < ($2::date + interval '1 day' + interval '3 hours')
-           AND ends_at > ($2::date + interval '3 hours')`,
-        [providerId, date],
-    )
-    const occupied: OccupiedInterval[] = []
-    for (const row of occupiedRows.rows) {
-        const start = saoPauloParts(new Date(row.starts_at))
-        const end = saoPauloParts(new Date(row.ends_at))
-        if (!start || !end || start.date !== date || end.date !== date) continue
-        occupied.push({ start: start.minutes, end: end.minutes })
-    }
+    const occupied = await readAgendaOccupancy(providerId, date, client)
     return generateStartMinutes({
         day,
         durationMinutes,
@@ -205,22 +192,31 @@ export const createManualAppointment = async (
     }
     const key = weekdayOf(startParts.date)
     if (!key) throw new AppError('Informe a data.', 400)
-    const routine = await readWeeklyAvailability(providerId)
-    if (routine.travel_gap_minutes == null) {
-        throw new AppError('Salve a rotina antes de incluir um atendimento.', 409)
-    }
-    if (routineCovers(routine.days[key], startParts.minutes, endParts.minutes)) {
-        throw new AppError('Este horário está dentro da rotina. O encaixe manual é só para fora dela.', 400)
-    }
-    if (!routine.manual_fit) {
-        throw new AppError('Encaixe manual desligado. Este horário está fora da rotina.', 409)
-    }
-    const id = randomUUID()
-    const pool = getPool()
-    await pool.query(
-        `INSERT INTO provider_manual_appointments(id, provider_id, starts_at, ends_at)
-         VALUES ($1,$2,$3,$4)`,
-        [id, providerId, starts.toISOString(), ends.toISOString()],
-    )
-    return { id, starts_at: starts.toISOString(), ends_at: ends.toISOString() }
+    return withTransaction(async client => {
+        await lockProviderAgenda(providerId, client)
+        const routine = await readWeeklyAvailability(providerId, client)
+        if (routine.travel_gap_minutes == null) {
+            throw new AppError('Salve a rotina antes de incluir um atendimento.', 409)
+        }
+        if (routineCovers(routine.days[key], startParts.minutes, endParts.minutes)) {
+            throw new AppError('Este horário está dentro da rotina. O encaixe manual é só para fora dela.', 400)
+        }
+        if (!routine.manual_fit) {
+            throw new AppError('Encaixe manual desligado. Este horário está fora da rotina.', 409)
+        }
+        const origin = new Date(`${startParts.date}T00:00:00-03:00`).getTime()
+        const startMinute = (starts.getTime() - origin) / 60000
+        const endMinute = (ends.getTime() - origin) / 60000
+        const occupied = await readAgendaOccupancy(providerId, startParts.date, client)
+        if (occupied.some(block => intervalConflicts(startMinute, endMinute, block, routine.travel_gap_minutes!))) {
+            throw new AppError('Este horário não está disponível. Escolha outro horário.', 409)
+        }
+        const id = randomUUID()
+        await client.query(
+            `INSERT INTO provider_manual_appointments(id, provider_id, starts_at, ends_at)
+             VALUES ($1,$2,$3,$4)`,
+            [id, providerId, starts.toISOString(), ends.toISOString()],
+        )
+        return { id, starts_at: starts.toISOString(), ends_at: ends.toISOString() }
+    })
 }
