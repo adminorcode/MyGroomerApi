@@ -1,13 +1,19 @@
 import { Request, Response } from 'express'
 import { AppError } from '../../shared/errors'
 import { findProviderByUserId } from './provider.service'
-import { createAgendaBlock, deleteAgendaBlock, listAgendaBlocks } from './agenda.service'
+import { createAgendaBlock, deleteAgendaBlock, listAgendaBlocks, listProviderAgenda } from './agenda.service'
 
 const ownerProvider = async (req: Request) => {
     if (!req.user) throw new AppError('Não autorizado', 401)
     const provider = await findProviderByUserId(req.user.id)
     if (!provider) throw new AppError('Perfil do groomer não encontrado', 404)
     return provider
+}
+
+export const getAgenda = async (req: Request, res: Response) => {
+    const provider = await ownerProvider(req)
+    const { from, to } = req.query as { from: string, to: string }
+    res.json({ success: true, data: await listProviderAgenda(provider.id, from, to) })
 }
 
 export const getAgendaBlocks = async (req: Request, res: Response) => {

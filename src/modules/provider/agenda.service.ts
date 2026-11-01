@@ -3,6 +3,7 @@ import { PoolClient } from 'pg'
 import { executor, withTransaction } from '../../shared/db/transaction'
 import { AppError } from '../../shared/errors'
 import { OccupiedInterval } from './weekly-availability.slots'
+import { buildAgenda, parseAgendaWindow } from './agenda.window'
 
 export const lockProviderAgenda = async (providerId: string, client: PoolClient): Promise<void> => {
     const result = await client.query('SELECT id FROM providers WHERE id = $1 FOR UPDATE', [providerId])
@@ -44,6 +45,59 @@ export const readAgendaOccupancy = async (
 }
 
 export type AgendaBlockInput = { starts_at: string, ends_at: string }
+
+export const listProviderAgenda = async (providerId: string, from: string, to: string) => {
+    const window = parseAgendaWindow(from, to)
+    const bounds = [providerId, window.from.toISOString(), window.to.toISOString()]
+    const db = executor()
+    const [appointments, blocks, manualAppointments] = await Promise.all([
+        db.query(
+            `SELECT bookings.id,
+                    bookings.scheduled_at,
+                    bookings.duration_minutes,
+                    bookings.booking_status,
+                    customer_users.name AS customer_name,
+                    bookings.customer_location,
+                    services.name AS service_name,
+                    pets.name AS pet_name,
+                    pets.photo_url AS pet_photo_url
+             FROM bookings
+             JOIN provider_services ON provider_services.id = bookings.provider_service_id
+             LEFT JOIN services ON services.id = provider_services.service_id
+             LEFT JOIN pets ON pets.id = bookings.pet_id
+             LEFT JOIN users AS customer_users ON customer_users.id = bookings.customer_id
+             WHERE provider_services.provider_id = $1
+               AND bookings.booking_status IS DISTINCT FROM 'cancelled'
+               AND bookings.scheduled_at >= $2::timestamptz
+               AND bookings.scheduled_at < $3::timestamptz
+             ORDER BY bookings.scheduled_at`,
+            bounds,
+        ),
+        db.query(
+            `SELECT id, starts_at, ends_at
+             FROM provider_agenda_blocks
+             WHERE provider_id = $1
+               AND starts_at < $3::timestamptz
+               AND ends_at > $2::timestamptz
+             ORDER BY starts_at`,
+            bounds,
+        ),
+        db.query(
+            `SELECT id, starts_at, ends_at
+             FROM provider_manual_appointments
+             WHERE provider_id = $1
+               AND starts_at < $3::timestamptz
+               AND ends_at > $2::timestamptz
+             ORDER BY starts_at`,
+            bounds,
+        ),
+    ])
+    return buildAgenda(window, {
+        appointments: appointments.rows,
+        blocks: blocks.rows,
+        manualAppointments: manualAppointments.rows,
+    })
+}
 
 export const listAgendaBlocks = async (providerId: string) => {
     const result = await executor().query(

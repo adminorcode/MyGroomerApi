@@ -1,4 +1,20 @@
 import { z } from 'zod'
+import { parseAgendaWindow } from './agenda.window'
+
+export const agendaQuerySchema = z.object({
+    from: z.iso.datetime({ offset: true }),
+    to: z.iso.datetime({ offset: true }),
+}).strict().superRefine((value, context) => {
+    try {
+        parseAgendaWindow(value.from, value.to)
+    } catch (error) {
+        context.addIssue({
+            code: 'custom',
+            message: error instanceof Error ? error.message : 'Janela inválida',
+            path: ['to'],
+        })
+    }
+})
 
 export const agendaBlockSchema = z.object({
     starts_at: z.iso.datetime({ offset: true }),

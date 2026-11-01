@@ -28,8 +28,8 @@ import { validate, validateQuery } from "../../shared/http/validate.middleware";
 import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, manualAppointmentSchema, registerProviderSchema, saveMenuSchema, saveServiceLocationSchema, saveWeeklyAvailabilitySchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema, weeklySlotsQuerySchema } from "./provider.schemas";
 import { getRegistration, putRegistration } from './registration.controller';
 import { saveRegistrationSchema } from './registration.schemas';
-import { getAgendaBlocks, postAgendaBlock, removeAgendaBlock } from './agenda.controller';
-import { agendaBlockSchema, agendaBlockParamsSchema } from './agenda.schemas';
+import { getAgenda, getAgendaBlocks, postAgendaBlock, removeAgendaBlock } from './agenda.controller';
+import { agendaBlockSchema, agendaBlockParamsSchema, agendaQuerySchema } from './agenda.schemas';
 import { validateParams } from '../../shared/http/validate.middleware';
 
 const router = Router()
@@ -79,6 +79,7 @@ router.get('/weekly-availability', authenticate, getWeeklyAvailability)
 
 router.put('/weekly-availability', authenticate, validate(saveWeeklyAvailabilitySchema), saveWeeklyAvailability)
 
+router.get('/agenda', authenticate, validateQuery(agendaQuerySchema), getAgenda)
 router.get('/agenda-blocks', authenticate, getAgendaBlocks)
 router.post('/agenda-blocks', authenticate, validate(agendaBlockSchema), postAgendaBlock)
 router.delete('/agenda-blocks/:blockId', authenticate, validateParams(agendaBlockParamsSchema), removeAgendaBlock)
