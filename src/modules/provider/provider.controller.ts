@@ -319,9 +319,13 @@ export const registerAsProvider = async (req: Request, res: Response) => {
     })
 }
 
-const requireProvider = async (req: Request) => {
+const requireUser = (req: Request) => {
     if (!req.user) throw new AppError('Não autorizado', 401)
-    const provider = await findProviderByUserId(req.user.id)
+}
+
+const requireProvider = async (req: Request) => {
+    requireUser(req)
+    const provider = await findProviderByUserId(req.user!.id)
     if (!provider) throw new AppError('Perfil do groomer não encontrado', 404)
     return provider
 }
@@ -333,7 +337,7 @@ export const getServiceLocation = async (req: Request, res: Response) => {
 }
 
 export const mapTiles = async (req: Request, res: Response) => {
-    await requireProvider(req)
+    requireUser(req)
     const apiKey = process.env.GEOAPIFY_API_KEY?.trim()
     if (!apiKey) throw new AppError('Geocodificação indisponível.', 503)
     res.status(200).json({
@@ -345,7 +349,7 @@ export const mapTiles = async (req: Request, res: Response) => {
 }
 
 export const autocompleteServiceLocation = async (req: Request, res: Response) => {
-    await requireProvider(req)
+    requireUser(req)
     const text = (req.query as { text?: string }).text ?? ''
     const suggestions = await autocompleteAddress(text)
     res.status(200).json({ success: true, data: suggestions })

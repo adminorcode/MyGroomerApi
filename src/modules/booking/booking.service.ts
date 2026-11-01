@@ -4,16 +4,20 @@ import { logger } from '../../config/logger.config'
 import { isLocalTestMode } from '../../config/runtime.config'
 import { CANCELLATION_FEE_RATE } from '../../constants'
 import { getPaymentGateway } from '../../integrations/payments/payment-gateway'
+import { findProviderServiceById } from '../provider/provider.service'
+import { lockProviderAgenda } from '../provider/agenda.service'
 import { revalidateBookingSlot } from './booking-slots.service'
 import { AppError } from '../../shared/errors'
 import { withTransaction } from '../../shared/db/transaction'
 import { Booking, BookingStatus, CreateBookingInput } from './booking.types'
 import { PaymentStatus } from '../payment/payment.types'
 import { Role } from '../auth/user.types'
-import { applyPaymentStatus, findPaymentByBookingId, findPaymentByReference, insertPayment, updatePaymentStatus, withPaymentLock } from '../payment/payment.service'
+import { applyPaymentStatus, findPaymentByBookingId, findPaymentByReference, updatePaymentStatus, withPaymentLock } from '../payment/payment.service'
 import {
     fetchBookings,
     findBookingById,
+    findOpenBookingRequest,
+    findProviderUserId,
     insertBooking,
     isBookingProvider,
     lockBookingStatus,
@@ -111,13 +115,41 @@ const refundCapturedPayment = async (bookingId: string, reference: string, minor
     })
 }
 
+const duplicateBookingResponse = (booking: Booking) => ({
+    created: false as const,
+    message: 'Esta solicitação já foi enviada' as const,
+    booking,
+})
+
+const createdBookingResponse = (booking: Booking) => ({
+    created: true as const,
+    message: 'Solicitação enviada' as const,
+    booking,
+})
+
+const isUniqueViolation = (error: unknown): error is { code: string } => (
+    typeof error === 'object' && error !== null && 'code' in error && (error as { code: string }).code === '23505'
+)
+
 export const createBookingForCustomer = async (actor: BookingActor, body: CreateBookingBody) => {
+    if (actor.role !== Role.CUSTOMER) {
+        throw new AppError('Só o tutor pode enviar uma solicitação', 403)
+    }
     const { pet_id, provider_service_id, scheduled_at, customer_location, customer_latitude, customer_longitude } = body
     if (!pet_id || !provider_service_id || !scheduled_at || !customer_location) {
         throw new AppError('Informe o pet, o serviço, a data e o local do atendimento', 400)
     }
 
     return withTransaction(async client => {
+        const offerRef = await findProviderServiceById(provider_service_id, client)
+        if (!offerRef) throw new AppError('Serviço do groomer não encontrado', 404)
+        await lockProviderAgenda(offerRef.provider_id, client)
+        const providerUserId = await findProviderUserId(offerRef.provider_id, client)
+        if (!providerUserId) throw new AppError('Serviço do groomer não encontrado', 404)
+
+        const existing = await findOpenBookingRequest(actor.id, pet_id, providerUserId, scheduled_at, client)
+        if (existing) return duplicateBookingResponse(existing)
+
         const prepared = await revalidateBookingSlot(actor.id, { pet_id, provider_service_id, scheduled_at }, client)
         const bookingId = randomUUID()
         const input: CreateBookingInput = {
@@ -132,45 +164,19 @@ export const createBookingForCustomer = async (actor: BookingActor, body: Create
             service_price: prepared.price,
         }
 
-        if (isLocalTestMode()) {
-            const payment = await getPaymentGateway().initializePayment({
-                email: actor.email ?? '', amountMinor: 0, reference: `local_${bookingId}`,
-            })
-            if (payment.mode !== 'disabled' || payment.authorizationUrl !== null) {
-                throw new AppError('Payments are disabled in local test mode', 503)
-            }
-            const booking = await insertBooking(bookingId, input, BookingStatus.PENDING_CONFIRMATION, client)
-            if (!booking) throw new AppError('Não foi possível criar o agendamento', 500)
-            return {
-                message: 'Agendamento de teste criado sem pagamento' as const,
-                data: { booking, authorization_url: null, payment_mode: 'disabled' as const },
-            }
+        try {
+            const inserted = await insertBooking(bookingId, input, BookingStatus.PENDING_CONFIRMATION, client)
+            if (!inserted) throw new AppError('Não foi possível criar o agendamento', 500)
+        } catch (error) {
+            if (!isUniqueViolation(error)) throw error
+            const raced = await findOpenBookingRequest(actor.id, pet_id, providerUserId, scheduled_at, client)
+            if (!raced) throw error
+            return duplicateBookingResponse(raced)
         }
 
-        // The agenda lock is kept until the booking and payment commit. A losing
-        // concurrent request never initializes an external payment.
-        const reference = `boame_${bookingId}_${Date.now()}`
-        const initialized = await getPaymentGateway().initializePayment({
-            email: actor.email ?? '',
-            amountMinor: amountMinor(prepared.price),
-            reference,
-            callbackUrl: 'https://boame.app/payment/callback',
-        })
-        if (!initialized.authorizationUrl) throw new AppError('Payment initialization failed!', 500)
-        const booking = await insertBooking(bookingId, input, BookingStatus.PENDING_PAYMENT, client)
+        const booking = await findBookingById(bookingId, client)
         if (!booking) throw new AppError('Não foi possível criar o agendamento', 500)
-        const payment = await insertPayment({
-            customer_id: actor.id,
-            booking_id: booking.id,
-            amount: prepared.price,
-            payment_date: new Date(),
-            paystack_reference: reference,
-        }, client)
-        if (!payment) throw new AppError('Não foi possível iniciar o pagamento', 500)
-        return {
-            message: 'Serviço agendado com sucesso' as const,
-            data: { booking, authorization_url: initialized.authorizationUrl },
-        }
+        return createdBookingResponse(booking)
     })
 }
 

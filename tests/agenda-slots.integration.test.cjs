@@ -196,9 +196,9 @@ test('AC-04 revalidates block, routine, pet size and precise instant before inse
     assert.equal((await pool.query('SELECT id FROM bookings WHERE provider_service_id = $1', [ids.offer])).rowCount, 0)
 })
 
-test('AC-05 simultaneous incompatible requests across two offers create one occupancy', async () => {
+test('AC-05 simultaneous requests across two offers create one occupancy', async () => {
     const results = await Promise.all([book(iso('09:00')), book(iso('09:00'), ids.small, ids.secondOffer)])
-    assert.deepEqual(results.map(item => item.status).sort(), [201, 409])
+    assert.deepEqual(results.map(item => item.status).sort(), [200, 201])
     const stored = await pool.query('SELECT id, duration_minutes, service_price FROM bookings WHERE provider_service_id = ANY($1::uuid[])', [[ids.offer, ids.secondOffer]])
     assert.equal(stored.rowCount, 1)
     assert.equal(stored.rows[0].duration_minutes, 30)

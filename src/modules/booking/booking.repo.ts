@@ -4,6 +4,43 @@ import { executor } from '../../shared/db/transaction'
 import { Booking, BookingStatus, CreateBookingInput } from './booking.types'
 import { QueryType } from '../../types/pagination.types'
 
+const serviceNameSql = `COALESCE(NULLIF(btrim(provider_services.custom_name), ''), services.name)`
+
+const normalizeBookingRow = (row: Booking | undefined): Booking | null => {
+    if (!row) return null
+    return {
+        ...row,
+        price: row.price == null ? row.price : Number(row.price),
+        service_price: row.service_price == null ? row.service_price : Number(row.service_price),
+    }
+}
+
+const bookingDetailSelect = `
+        SELECT
+            bookings.*,
+            users.name as customer_name,
+            users.email as customer_email,
+            COALESCE(bookings.service_price, provider_services.price)::float AS price,
+            ${serviceNameSql} as service_name,
+            provider_users.name as provider_name,
+            provider_users.id as provider_user_id,
+            reviews.id as review_id,
+            pets.name AS pet_name,
+            pets.species AS pet_species,
+            pets.breed AS pet_breed,
+            pets.size AS pet_size,
+            pets.age_years AS pet_age_years,
+            pets.notes AS pet_notes
+        FROM bookings
+        LEFT JOIN pets ON bookings.pet_id = pets.id
+        LEFT JOIN users ON bookings.customer_id = users.id
+        LEFT JOIN provider_services ON bookings.provider_service_id = provider_services.id
+        LEFT JOIN services ON provider_services.service_id = services.id
+        LEFT JOIN providers ON provider_services.provider_id = providers.id
+        LEFT JOIN users AS provider_users ON providers.user_id = provider_users.id
+        LEFT JOIN reviews ON reviews.booking_id = bookings.id
+`
+
 export const insertBooking = async (
     bookingId: string,
     bookingInput: CreateBookingInput,
@@ -37,34 +74,40 @@ export const insertBooking = async (
 
 export const findBookingById = async (bookingId: string, client?: PoolClient): Promise<Booking | null> => {
     const result = await executor(client).query(
-        `SELECT
-            bookings.*,
-            users.name as customer_name,
-            users.email as customer_email,
-            COALESCE(bookings.service_price, provider_services.price) AS price,
-            services.name as service_name,
-            provider_users.name as provider_name,
-            provider_users.id as provider_user_id,
-            reviews.id as review_id,
-            pets.name AS pet_name,
-            pets.species AS pet_species,
-            pets.breed AS pet_breed,
-            pets.size AS pet_size,
-            pets.age_years AS pet_age_years,
-            pets.notes AS pet_notes
-        FROM bookings
-        LEFT JOIN pets ON bookings.pet_id = pets.id
-        LEFT JOIN users ON bookings.customer_id = users.id
-        LEFT JOIN provider_services ON bookings.provider_service_id = provider_services.id
-        LEFT JOIN services ON provider_services.service_id = services.id
-        LEFT JOIN providers ON provider_services.provider_id = providers.id
-        LEFT JOIN users AS provider_users ON providers.user_id = provider_users.id
-        LEFT JOIN reviews ON reviews.booking_id = bookings.id
-        WHERE bookings.id = $1
-        `,
+        `${bookingDetailSelect} WHERE bookings.id = $1`,
         [bookingId],
     )
-    return result.rows[0] || null
+    return normalizeBookingRow(result.rows[0])
+}
+
+export const findProviderUserId = async (providerId: string, client?: PoolClient): Promise<string | null> => {
+    const result = await executor(client).query(
+        `SELECT user_id FROM providers WHERE id = $1`,
+        [providerId],
+    )
+    return result.rows[0]?.user_id ?? null
+}
+
+export const findOpenBookingRequest = async (
+    customerId: string,
+    petId: string,
+    providerUserId: string,
+    scheduledAt: string,
+    client?: PoolClient,
+): Promise<Booking | null> => {
+    const result = await executor(client).query(
+        `${bookingDetailSelect}
+        WHERE bookings.customer_id = $1
+          AND bookings.pet_id = $2
+          AND provider_users.id = $3
+          AND bookings.scheduled_at = $4::timestamptz
+          AND bookings.booking_status IS DISTINCT FROM $5
+        ORDER BY bookings.created_at ASC
+        LIMIT 1
+        `,
+        [customerId, petId, providerUserId, scheduledAt, BookingStatus.CANCELLED],
+    )
+    return normalizeBookingRow(result.rows[0])
 }
 
 export const fetchBookings = async (
@@ -105,7 +148,7 @@ export const fetchBookings = async (
         SELECT
             bookings.*,
             services.name AS service_name,
-            COALESCE(bookings.service_price, provider_services.price) AS price,
+            COALESCE(bookings.service_price, provider_services.price)::float AS price,
             provider_users.name AS provider_name,
             customer_users.name AS customer_name,
             pets.name AS pet_name,

@@ -110,6 +110,25 @@ test('map tiles use the klokantech basic style', async () => {
     )
 })
 
+test('tutor can suggest an address and load map tiles', async () => {
+    const tiles = await request('/providers/service-location/map-tiles', 'GET', undefined, tutor)
+    assert.equal(tiles.status, 200)
+    assert.equal(
+        tiles.body.data.url.startsWith('https://maps.geoapify.com/v1/tile/klokantech-basic/{z}/{x}/{y}.png?apiKey='),
+        true,
+    )
+    const result = await request(
+        `/providers/service-location/autocomplete?text=${encodeURIComponent('Avenida Paulista, São Paulo')}`,
+        'GET',
+        undefined,
+        tutor,
+    )
+    assert.equal(result.status, 200)
+    assert.ok(result.body.data.some(item => String(item.address).includes('Paulista') && Number.isFinite(item.latitude)))
+    const postal = await request('/providers/service-location/postal-code?postal_code=01310100', 'GET', undefined, tutor)
+    assert.equal(postal.status, 404)
+})
+
 test('address autocomplete suggests the typed street', async () => {
     const result = await request(
         `/providers/service-location/autocomplete?text=${encodeURIComponent('Rua Vital Brasil, Porto Alegre')}`,
