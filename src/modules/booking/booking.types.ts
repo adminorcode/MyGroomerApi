@@ -22,6 +22,7 @@ export interface Booking{
     duration_minutes?: number | null
     service_price?: number | null
     booking_status: BookingStatus
+    provider_rejected_at?: Date | null
     customer_location:string
     customer_latitude?: number
     customer_longitude?: number

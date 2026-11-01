@@ -175,20 +175,29 @@ export const fetchBookings = async (
 
 export const updateBookingStatus = async (
     bookingId: string,
-    update: { booking_status: BookingStatus },
+    update: { booking_status: BookingStatus, mark_provider_rejected?: boolean },
     client?: PoolClient,
     expectedStatus?: BookingStatus,
 ): Promise<Booking | null> => {
+    const values: unknown[] = [update.booking_status, update.booking_status, bookingId]
+    let expectedFilter = ''
+    if (expectedStatus) {
+        values.push(expectedStatus)
+        expectedFilter = ` AND booking_status = $${values.length}`
+    }
+    values.push(update.mark_provider_rejected === true)
+    const rejectedParam = `$${values.length}`
     const result = await executor(client).query(
         `
         UPDATE bookings
         SET booking_status = $1,
         updated_at = NOW(),
-        completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE completed_at END
-        WHERE id = $3${expectedStatus ? ' AND booking_status = $4' : ''}
+        completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE completed_at END,
+        provider_rejected_at = CASE WHEN ${rejectedParam} THEN NOW() ELSE provider_rejected_at END
+        WHERE id = $3${expectedFilter}
         RETURNING *
         `,
-        [update.booking_status, update.booking_status, bookingId, ...(expectedStatus ? [expectedStatus] : [])],
+        values,
     )
     return result.rows[0] || null
 }

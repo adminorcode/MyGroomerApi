@@ -32,6 +32,8 @@ import { deleteGalleryPhoto, deletePublicPhoto, getGalleryPhoto, getOwnPublicPro
 import { galleryPhotoParamsSchema, publicDescriptionSchema, publicPhotoParamsSchema, publicPhotoSchema } from './public-profile.schemas';
 import { getAgenda, getAgendaBlocks, postAgendaBlock, removeAgendaBlock } from './agenda.controller';
 import { agendaBlockSchema, agendaBlockParamsSchema, agendaQuerySchema } from './agenda.schemas';
+import { getProviderRequests } from './requests.controller';
+import { providerRequestsQuerySchema } from './requests.schemas';
 import { validateParams } from '../../shared/http/validate.middleware';
 
 const router = Router()
@@ -91,6 +93,7 @@ router.get('/public-photo/:providerId', authenticate, validateParams(publicPhoto
 router.put('/weekly-availability', authenticate, validate(saveWeeklyAvailabilitySchema), saveWeeklyAvailability)
 
 router.get('/agenda', authenticate, validateQuery(agendaQuerySchema), getAgenda)
+router.get('/requests', authenticate, validateQuery(providerRequestsQuerySchema), getProviderRequests)
 router.get('/agenda-blocks', authenticate, getAgendaBlocks)
 router.post('/agenda-blocks', authenticate, validate(agendaBlockSchema), postAgendaBlock)
 router.delete('/agenda-blocks/:blockId', authenticate, validateParams(agendaBlockParamsSchema), removeAgendaBlock)

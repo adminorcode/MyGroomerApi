@@ -287,7 +287,17 @@ export const changeBookingStatusForActor = async (
         }
     }
 
-    const updated = await updateBookingStatus(bookingId, { booking_status: bookingStatus }, undefined, booking.booking_status)
+    const providerRejectsPending = bookingStatus === BookingStatus.CANCELLED
+        && booking.booking_status === BookingStatus.PENDING_CONFIRMATION
+        && !isCustomer
+        && !isAdmin
+        && isProviderBooking
+    const updated = await updateBookingStatus(
+        bookingId,
+        { booking_status: bookingStatus, mark_provider_rejected: providerRejectsPending },
+        undefined,
+        booking.booking_status,
+    )
     if (!updated) throw new AppError('O agendamento foi alterado. Atualize os dados antes de tentar novamente.', 409)
     return updated
 }
