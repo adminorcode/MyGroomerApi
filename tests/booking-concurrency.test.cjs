@@ -6,49 +6,56 @@ const repo = require('../dist/modules/booking/booking.repo')
 const slots = require('../dist/modules/booking/booking-slots.service')
 const service = require('../dist/modules/booking/booking.service')
 
-test('payment initialization has bounded transport and its timeout rolls back the agenda transaction', async () => {
+test('booking creation never initializes external payment', async () => {
     const originalMode = process.env.LOCAL_TEST_MODE
     const originalNodeEnv = process.env.NODE_ENV
-    const originals = { getPool: db.getPool, prepare: slots.revalidateBookingSlot, post: axios.post }
-    const commands = []
-    let released = false
-    let held = false
-    const timedOut = new axios.AxiosError('Payment initialization timed out', 'ECONNABORTED')
+    const originals = {
+        getPool: db.getPool,
+        findOffer: require('../dist/modules/provider/provider.service').findProviderServiceById,
+        lock: require('../dist/modules/provider/agenda.service').lockProviderAgenda,
+        providerUser: repo.findProviderUserId,
+        open: repo.findOpenBookingRequest,
+        prepare: slots.revalidateBookingSlot,
+        insert: repo.insertBooking,
+        find: repo.findBookingById,
+        post: axios.post,
+    }
+    let paymentCalled = false
     process.env.LOCAL_TEST_MODE = 'false'
     process.env.NODE_ENV = 'test'
-    const client = {
-        query: async query => {
-            commands.push(query)
-            if (query.includes('FOR UPDATE')) held = true
-            if (query === 'ROLLBACK') held = false
-            return { rows: [], rowCount: 0 }
-        },
-        release: () => { released = true },
-    }
-    db.getPool = () => ({ connect: async () => client })
-    slots.revalidateBookingSlot = async (owner, input, connection) => {
-        await connection.query('SELECT id FROM providers WHERE id = $1 FOR UPDATE')
-        return { slots: [input.scheduled_at], duration_minutes: 30, price: 50, timezone: 'America/Sao_Paulo' }
-    }
-    axios.post = async (url, body, options) => {
-        assert.equal(url, 'https://api.paystack.co/transaction/initialize')
-        assert.equal(options.timeout, 10_000)
-        assert.ok(options.signal instanceof AbortSignal)
-        assert.equal(options.signal.aborted, false)
-        assert.equal(held, true, 'initialization is inside the agenda transaction')
-        throw timedOut
-    }
+    axios.post = async () => { paymentCalled = true }
+    require('../dist/modules/provider/provider.service').findProviderServiceById = async () => ({ id: 'offer', provider_id: 'provider' })
+    require('../dist/modules/provider/agenda.service').lockProviderAgenda = async () => {}
+    repo.findProviderUserId = async () => 'provider-user'
+    repo.findOpenBookingRequest = async () => null
+    slots.revalidateBookingSlot = async () => ({ duration_minutes: 30, price: 50, timezone: 'America/Sao_Paulo', slots: [] })
+    repo.insertBooking = async id => ({ id, booking_status: 'pending_confirmation' })
+    repo.findBookingById = async id => ({ id, booking_status: 'pending_confirmation', price: 50, service_price: 50 })
+    db.getPool = () => ({
+        query: async () => ({ rows: [], rowCount: 0 }),
+        connect: async () => ({
+            query: async sql => {
+                if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [], rowCount: 0 }
+                return { rows: [], rowCount: 0 }
+            },
+            release: () => {},
+        }),
+    })
     try {
-        await assert.rejects(() => service.createBookingForCustomer({ id: 'tutor', role: 'customer', email: 'fixture@example.test' }, {
+        const result = await service.createBookingForCustomer({ id: 'tutor', role: 'customer', email: 'fixture@example.test' }, {
             pet_id: 'pet', provider_service_id: 'offer', scheduled_at: '2030-01-01T12:00:00.000Z', customer_location: 'Teste',
-        }), error => error === timedOut)
-        assert.deepEqual(commands, ['BEGIN', 'SELECT id FROM providers WHERE id = $1 FOR UPDATE', 'ROLLBACK'])
-        assert.equal(released, true)
-        assert.equal(held, false)
-        assert.equal(commands.some(query => query.includes('INSERT')), false)
+        })
+        assert.equal(result.created, true)
+        assert.equal(paymentCalled, false)
     } finally {
         db.getPool = originals.getPool
+        require('../dist/modules/provider/provider.service').findProviderServiceById = originals.findOffer
+        require('../dist/modules/provider/agenda.service').lockProviderAgenda = originals.lock
+        repo.findProviderUserId = originals.providerUser
+        repo.findOpenBookingRequest = originals.open
         slots.revalidateBookingSlot = originals.prepare
+        repo.insertBooking = originals.insert
+        repo.findBookingById = originals.find
         axios.post = originals.post
         if (originalMode === undefined) delete process.env.LOCAL_TEST_MODE
         else process.env.LOCAL_TEST_MODE = originalMode

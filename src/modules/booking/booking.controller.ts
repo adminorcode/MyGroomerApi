@@ -18,7 +18,11 @@ import {
 export const createBooking = async (req: Request, res: Response) => {
     if (!req.user) throw new AppError('Não autorizado', 401)
     const result = await createBookingForCustomer(req.user, req.body)
-    res.status(201).json({ success: true, message: result.message, data: result.data })
+    res.status(result.created ? 201 : 200).json({
+        success: true,
+        message: result.message,
+        data: { created: result.created, booking: result.booking },
+    })
 }
 
 export const getBookingId = async (req: Request, res: Response) => {

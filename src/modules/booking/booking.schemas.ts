@@ -18,6 +18,16 @@ export const createBookingSchema = z.object({
     customer_location: z.string().min(1, 'O local é obrigatório'),
     customer_latitude: z.number().min(-90).max(90).optional(),
     customer_longitude: z.number().min(-180).max(180).optional(),
+}).superRefine((data, ctx) => {
+    const hasLatitude = data.customer_latitude !== undefined
+    const hasLongitude = data.customer_longitude !== undefined
+    if (hasLatitude !== hasLongitude) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['customer_latitude'],
+            message: 'Informe latitude e longitude juntas',
+        })
+    }
 })
 
 export const changeBookingStatusSchema = z.object({
