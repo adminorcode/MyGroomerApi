@@ -4,10 +4,11 @@ import { logger } from '../../config/logger.config'
 import { isLocalTestMode } from '../../config/runtime.config'
 import { CANCELLATION_FEE_RATE } from '../../constants'
 import { getPaymentGateway } from '../../integrations/payments/payment-gateway'
-import { findProviderServiceById } from '../provider/provider.service'
+import { findProviderServiceById, findProviderUserId } from '../provider/provider.service'
 import { lockProviderAgenda } from '../provider/agenda.service'
 import { revalidateBookingSlot } from './booking-slots.service'
 import { AppError } from '../../shared/errors'
+import { databaseError } from '../../shared/db/drizzle'
 import { withTransaction } from '../../shared/db/transaction'
 import { Booking, BookingStatus, CreateBookingInput } from './booking.types'
 import { PaymentStatus } from '../payment/payment.types'
@@ -17,7 +18,6 @@ import {
     fetchBookings,
     findBookingById,
     findOpenBookingRequest,
-    findProviderUserId,
     insertBooking,
     isBookingProvider,
     lockBookingStatus,
@@ -127,9 +127,7 @@ const createdBookingResponse = (booking: Booking) => ({
     booking,
 })
 
-const isUniqueViolation = (error: unknown): error is { code: string } => (
-    typeof error === 'object' && error !== null && 'code' in error && (error as { code: string }).code === '23505'
-)
+const isUniqueViolation = (error: unknown) => databaseError(error).code === '23505'
 
 export const createBookingForCustomer = async (actor: BookingActor, body: CreateBookingBody) => {
     if (actor.role !== Role.CUSTOMER) {

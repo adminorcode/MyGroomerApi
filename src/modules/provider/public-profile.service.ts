@@ -1,10 +1,11 @@
 import { randomUUID } from 'crypto'
-import { getPool } from '../../config/database.config'
 import { AppError } from '../../shared/errors'
+import { col, execute, sql } from '../../shared/db/drizzle'
 import { withTransaction } from '../../shared/db/transaction'
 import { minutesToClock } from './weekly-availability.slots'
 import { PublicProfile, PublicProfileArea } from './provider.types'
 import { MAX_GALLERY_PHOTOS, PublicDescriptionInput, PublicPhotoInput } from './public-profile.schemas'
+import { providerGalleryPhotos, providerServices, providerWeekdays, providers } from './provider.table'
 
 const radii = new Set([3, 5, 8, 10])
 
@@ -19,79 +20,66 @@ const rulesOf = (value: unknown): string | null => {
 }
 
 export const presentPublicProfile = async (providerId: string): Promise<PublicProfile | null> => {
-    const pool = getPool()
-    const entry = await pool.query(
-        `
+    const entry = await execute(undefined, sql`
         SELECT
-            providers.id,
-            providers.is_verified,
-            providers.attendance_rules,
-            providers.base_address,
-            providers.radius_km,
-            providers.public_photo_id,
+            ${providers.id} AS id,
+            ${providers.is_verified} AS is_verified,
+            ${providers.attendance_rules} AS attendance_rules,
+            ${providers.base_address} AS base_address,
+            ${providers.radius_km} AS radius_km,
+            ${providers.public_photo_id} AS public_photo_id,
             users.name,
             users.profile_picture,
             (
                 SELECT COALESCE(ROUND(AVG(r.rating), 1), 0)
                 FROM reviews r
-                WHERE r.provider_user_id = providers.user_id
+                WHERE r.provider_user_id = ${providers.user_id}
             )::float AS average_rating,
             (
                 SELECT COUNT(*)
                 FROM reviews r
-                WHERE r.provider_user_id = providers.user_id
+                WHERE r.provider_user_id = ${providers.user_id}
             )::int AS review_count
-        FROM providers
-        INNER JOIN users ON users.id = providers.user_id
-        WHERE providers.id = $1
-        `,
-        [providerId],
-    )
+        FROM ${providers}
+        INNER JOIN users ON users.id = ${providers.user_id}
+        WHERE ${providers.id} = ${providerId}
+    `)
     const row = entry.rows[0]
     if (!row) return null
 
-    const services = await pool.query(
-        `
+    const services = await execute(undefined, sql`
         SELECT
-            provider_services.id,
-            COALESCE(NULLIF(btrim(provider_services.custom_name), ''), services.name) AS name,
-            provider_services.price
-        FROM provider_services
-        LEFT JOIN services ON services.id = provider_services.service_id
-        WHERE provider_services.provider_id = $1
-          AND provider_services.is_active
-          AND COALESCE(NULLIF(btrim(provider_services.custom_name), ''), services.name) IS NOT NULL
-        ORDER BY name ASC, provider_services.id ASC
-        `,
-        [providerId],
-    )
-    const days = await pool.query(
-        `
+            ${providerServices.id} AS id,
+            COALESCE(NULLIF(btrim(${providerServices.custom_name}), ''), services.name) AS name,
+            ${providerServices.price} AS price
+        FROM ${providerServices}
+        LEFT JOIN services ON services.id = ${providerServices.service_id}
+        WHERE ${providerServices.provider_id} = ${providerId}
+          AND ${providerServices.is_active}
+          AND COALESCE(NULLIF(btrim(${providerServices.custom_name}), ''), services.name) IS NOT NULL
+        ORDER BY name ASC, ${providerServices.id} ASC
+    `)
+    const days = await execute<{ weekday: number, start_minute: number, end_minute: number }>(undefined, sql`
         SELECT weekday, start_minute, end_minute
-        FROM provider_weekdays
-        WHERE provider_id = $1
-        ORDER BY weekday ASC
-        `,
-        [providerId],
-    )
-    const gallery = await pool.query(
-        `
-        SELECT id
-        FROM provider_gallery_photos
-        WHERE provider_id = $1
-        ORDER BY created_at ASC, id ASC
-        `,
-        [providerId],
-    )
+        FROM ${providerWeekdays}
+        WHERE ${providerWeekdays.provider_id} = ${providerId}
+        ORDER BY ${providerWeekdays.weekday} ASC
+    `)
+    const gallery = await execute<{ id: string }>(undefined, sql`
+        SELECT ${providerGalleryPhotos.id} AS id
+        FROM ${providerGalleryPhotos}
+        WHERE ${providerGalleryPhotos.provider_id} = ${providerId}
+        ORDER BY ${providerGalleryPhotos.created_at} ASC, ${providerGalleryPhotos.id} ASC
+    `)
 
     const radius = asRadius(row.radius_km)
     const address = typeof row.base_address === 'string' ? row.base_address.trim() : ''
 
     return {
-        provider_id: row.id,
-        name: row.name,
-        photo_url: row.profile_picture ?? null,
-        photo_id: row.public_photo_id ?? null,
+        provider_id: row.id as string,
+        name: row.name as string,
+        photo_url: (row.profile_picture as string | null) ?? null,
+        photo_id: (row.public_photo_id as string | null) ?? null,
         is_verified: row.is_verified === true,
         average_rating: Number(row.average_rating) || 0,
         review_count: Number(row.review_count) || 0,
@@ -106,14 +94,15 @@ export const presentPublicProfile = async (providerId: string): Promise<PublicPr
         services: services.rows.flatMap(service => {
             const price = Number(service.price)
             if (!service.name || !Number.isFinite(price) || price <= 0) return []
-            return [{ id: service.id, name: service.name, price }]
+            return [{ id: service.id as string, name: service.name as string, price }]
         }),
     }
 }
 
 export const readOwnPublicProfile = async (userId: string): Promise<PublicProfile> => {
-    const pool = getPool()
-    const provider = await pool.query('SELECT id FROM providers WHERE user_id = $1', [userId])
+    const provider = await execute<{ id: string }>(undefined, sql`
+        SELECT ${providers.id} AS id FROM ${providers} WHERE ${providers.user_id} = ${userId}
+    `)
     if (!provider.rows[0]) throw new AppError('Perfil do groomer não encontrado', 404)
     const profile = await presentPublicProfile(provider.rows[0].id)
     if (!profile) throw new AppError('Perfil do groomer não encontrado', 404)
@@ -121,8 +110,9 @@ export const readOwnPublicProfile = async (userId: string): Promise<PublicProfil
 }
 
 const ownProviderId = async (userId: string): Promise<string> => {
-    const pool = getPool()
-    const provider = await pool.query('SELECT id FROM providers WHERE user_id = $1', [userId])
+    const provider = await execute<{ id: string }>(undefined, sql`
+        SELECT ${providers.id} AS id FROM ${providers} WHERE ${providers.user_id} = ${userId}
+    `)
     if (!provider.rows[0]) throw new AppError('Perfil do groomer não encontrado', 404)
     return provider.rows[0].id
 }
@@ -130,11 +120,9 @@ const ownProviderId = async (userId: string): Promise<string> => {
 export const writePublicDescription = async (userId: string, input: PublicDescriptionInput): Promise<PublicProfile> => {
     const providerId = await ownProviderId(userId)
     const rules = rulesOf(input.attendance_rules)
-    const pool = getPool()
-    const saved = await pool.query(
-        'UPDATE providers SET attendance_rules = $2 WHERE id = $1 RETURNING id',
-        [providerId, rules],
-    )
+    const saved = await execute(undefined, sql`
+        UPDATE ${providers} SET ${col(providers.attendance_rules)} = ${rules} WHERE ${providers.id} = ${providerId} RETURNING id
+    `)
     if (!saved.rowCount) throw new AppError('Perfil do groomer não encontrado', 404)
     return readOwnPublicProfile(userId)
 }
@@ -143,95 +131,85 @@ const photoBytes = (input: PublicPhotoInput): Buffer => Buffer.from(input.base64
 
 export const writePublicPhoto = async (userId: string, input: PublicPhotoInput): Promise<PublicProfile> => {
     const providerId = await ownProviderId(userId)
-    const pool = getPool()
-    const saved = await pool.query(
-        `
-        UPDATE providers
-        SET public_photo = $2, public_photo_mime = $3, public_photo_id = $4
-        WHERE id = $1
+    const saved = await execute(undefined, sql`
+        UPDATE ${providers}
+        SET ${col(providers.public_photo)} = ${photoBytes(input)},
+            ${col(providers.public_photo_mime)} = ${input.mime_type},
+            ${col(providers.public_photo_id)} = ${randomUUID()}
+        WHERE ${providers.id} = ${providerId}
         RETURNING id
-        `,
-        [providerId, photoBytes(input), input.mime_type, randomUUID()],
-    )
+    `)
     if (!saved.rowCount) throw new AppError('Perfil do groomer não encontrado', 404)
     return readOwnPublicProfile(userId)
 }
 
 export const clearPublicPhoto = async (userId: string): Promise<void> => {
     const providerId = await ownProviderId(userId)
-    const pool = getPool()
-    const saved = await pool.query(
-        `
-        UPDATE providers
-        SET public_photo = NULL, public_photo_mime = NULL, public_photo_id = NULL
-        WHERE id = $1
-        `,
-        [providerId],
-    )
+    const saved = await execute(undefined, sql`
+        UPDATE ${providers}
+        SET ${col(providers.public_photo)} = NULL,
+            ${col(providers.public_photo_mime)} = NULL,
+            ${col(providers.public_photo_id)} = NULL
+        WHERE ${providers.id} = ${providerId}
+    `)
     if (!saved.rowCount) throw new AppError('Perfil do groomer não encontrado', 404)
 }
 
 export const addGalleryPhoto = async (userId: string, input: PublicPhotoInput): Promise<{ id: string }> => {
     const providerId = await ownProviderId(userId)
     return withTransaction(async client => {
-        const locked = await client.query('SELECT id FROM providers WHERE id = $1 FOR UPDATE', [providerId])
+        const locked = await execute(client, sql`
+            SELECT ${providers.id} AS id FROM ${providers} WHERE ${providers.id} = ${providerId} FOR UPDATE
+        `)
         if (!locked.rowCount) throw new AppError('Perfil do groomer não encontrado', 404)
-        const count = await client.query(
-            'SELECT COUNT(*)::int AS total FROM provider_gallery_photos WHERE provider_id = $1',
-            [providerId],
-        )
+        const count = await execute<{ total: number }>(client, sql`
+            SELECT COUNT(*)::int AS total FROM ${providerGalleryPhotos}
+            WHERE ${providerGalleryPhotos.provider_id} = ${providerId}
+        `)
         if (count.rows[0].total >= MAX_GALLERY_PHOTOS) {
             throw new AppError('A galeria aceita no máximo 5 fotos.', 400)
         }
         const id = randomUUID()
-        await client.query(
-            `
-            INSERT INTO provider_gallery_photos(id, provider_id, mime_type, size, content)
-            VALUES ($1, $2, $3, $4, $5)
-            `,
-            [id, providerId, input.mime_type, input.size, photoBytes(input)],
-        )
+        await execute(client, sql`
+            INSERT INTO ${providerGalleryPhotos}(id, provider_id, mime_type, size, content)
+            VALUES (${id}, ${providerId}, ${input.mime_type}, ${input.size}, ${photoBytes(input)})
+        `)
         return { id }
     })
 }
 
 export const removeGalleryPhoto = async (userId: string, photoId: string): Promise<void> => {
     const providerId = await ownProviderId(userId)
-    const pool = getPool()
-    const removed = await pool.query(
-        'DELETE FROM provider_gallery_photos WHERE id = $1 AND provider_id = $2 RETURNING id',
-        [photoId, providerId],
-    )
+    const removed = await execute(undefined, sql`
+        DELETE FROM ${providerGalleryPhotos}
+        WHERE ${providerGalleryPhotos.id} = ${photoId}
+          AND ${providerGalleryPhotos.provider_id} = ${providerId}
+        RETURNING id
+    `)
     if (!removed.rowCount) throw new AppError('Foto não encontrada', 404)
 }
 
 const mediaVisible = async (providerId: string, requesterUserId: string): Promise<boolean> => {
-    const pool = getPool()
-    const row = await pool.query(
-        `
+    const row = await execute<{ user_id: string, has_active_service: boolean }>(undefined, sql`
         SELECT
-            providers.user_id,
+            ${providers.user_id} AS user_id,
             EXISTS (
-                SELECT 1 FROM provider_services
-                WHERE provider_services.provider_id = providers.id
-                  AND provider_services.is_active
+                SELECT 1 FROM ${providerServices}
+                WHERE ${providerServices.provider_id} = ${providers.id}
+                  AND ${providerServices.is_active}
             ) AS has_active_service
-        FROM providers
-        WHERE providers.id = $1
-        `,
-        [providerId],
-    )
+        FROM ${providers}
+        WHERE ${providers.id} = ${providerId}
+    `)
     const provider = row.rows[0]
     if (!provider) return false
     return provider.user_id === requesterUserId || provider.has_active_service === true
 }
 
 export const readGalleryPhoto = async (photoId: string, requesterUserId: string): Promise<{ mimeType: string, content: Buffer }> => {
-    const pool = getPool()
-    const row = await pool.query(
-        'SELECT provider_id, mime_type, content FROM provider_gallery_photos WHERE id = $1',
-        [photoId],
-    )
+    const row = await execute<{ provider_id: string, mime_type: string, content: Buffer }>(undefined, sql`
+        SELECT provider_id, mime_type, content FROM ${providerGalleryPhotos} WHERE ${providerGalleryPhotos.id} = ${photoId}
+    `)
     const photo = row.rows[0]
     if (!photo || !await mediaVisible(photo.provider_id, requesterUserId)) {
         throw new AppError('Foto não encontrada', 404)
@@ -240,11 +218,11 @@ export const readGalleryPhoto = async (photoId: string, requesterUserId: string)
 }
 
 export const readPublicPhoto = async (providerId: string, requesterUserId: string): Promise<{ mimeType: string, content: Buffer }> => {
-    const pool = getPool()
-    const row = await pool.query(
-        'SELECT public_photo, public_photo_mime FROM providers WHERE id = $1',
-        [providerId],
-    )
+    const row = await execute<{ public_photo: Buffer | null, public_photo_mime: string }>(undefined, sql`
+        SELECT ${providers.public_photo} AS public_photo, ${providers.public_photo_mime} AS public_photo_mime
+        FROM ${providers}
+        WHERE ${providers.id} = ${providerId}
+    `)
     const photo = row.rows[0]
     if (!photo?.public_photo || !await mediaVisible(providerId, requesterUserId)) {
         throw new AppError('Foto não encontrada', 404)

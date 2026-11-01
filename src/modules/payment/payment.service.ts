@@ -1,3 +1,4 @@
+import { execute, sql } from '../../shared/db/drizzle'
 import { PoolClient } from 'pg'
 import { getPool } from '../../config/database.config'
 import { logger } from '../../config/logger.config'
@@ -32,12 +33,12 @@ export const withPaymentLock = async <T>(reference: string, operation: () => Pro
     const client = await getPool().connect()
     let locked = false
     try {
-        await client.query('SELECT pg_advisory_lock(hashtext($1)::bigint)', [reference])
+        await execute(client, sql`SELECT pg_advisory_lock(hashtext(${reference})::bigint)`)
         locked = true
         return await operation()
     } finally {
         if (locked) {
-            await client.query('SELECT pg_advisory_unlock(hashtext($1)::bigint)', [reference]).catch((error) => {
+            await execute(client, sql`SELECT pg_advisory_unlock(hashtext(${reference})::bigint)`).catch((error) => {
                 logger.error('payment advisory unlock failed', { error })
             })
         }

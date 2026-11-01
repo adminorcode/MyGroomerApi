@@ -1,7 +1,8 @@
 import { randomUUID } from 'crypto'
 import { PoolClient } from 'pg'
 import { AppError } from '../../shared/errors'
-import { executor, withTransaction } from '../../shared/db/transaction'
+import { col, execute, sql } from '../../shared/db/drizzle'
+import { withTransaction } from '../../shared/db/transaction'
 import { lockProviderAgenda, readAgendaOccupancy } from './agenda.service'
 import {
     DayWindow,
@@ -19,6 +20,7 @@ import {
     minutesToClock,
 } from './weekly-availability.slots'
 import { ManualAppointmentInput, SaveWeeklyAvailabilityInput } from './provider.schemas'
+import { providerManualAppointments, providerWeekdays, providers } from './provider.table'
 
 export type WeeklyAvailability = {
     days: Record<WeekdayKey, DayWindow>
@@ -76,18 +78,22 @@ const presentDay = (row: {
 })
 
 export const readWeeklyAvailability = async (providerId: string, client?: PoolClient): Promise<WeeklyAvailability> => {
-    const pool = executor(client)
-    const provider = await pool.query(
-        `SELECT travel_gap_minutes, manual_fit FROM providers WHERE id = $1`,
-        [providerId],
-    )
+    const provider = await execute<{ travel_gap_minutes: number | null, manual_fit: boolean }>(client, sql`
+        SELECT ${providers.travel_gap_minutes} AS travel_gap_minutes, ${providers.manual_fit} AS manual_fit
+        FROM ${providers} WHERE ${providers.id} = ${providerId}
+    `)
     if (!provider.rows[0]) throw new AppError('Perfil do groomer não encontrado', 404)
     const days = emptyDays()
-    const rows = await pool.query(
-        `SELECT weekday, start_minute, end_minute, break_start_minute, break_end_minute
-         FROM provider_weekdays WHERE provider_id = $1`,
-        [providerId],
-    )
+    const rows = await execute<{
+        weekday: number
+        start_minute: number
+        end_minute: number
+        break_start_minute: number | null
+        break_end_minute: number | null
+    }>(client, sql`
+        SELECT weekday, start_minute, end_minute, break_start_minute, break_end_minute
+        FROM ${providerWeekdays} WHERE ${providerWeekdays.provider_id} = ${providerId}
+    `)
     for (const row of rows.rows) {
         const key = WEEKDAY_KEYS[row.weekday]
         if (key) days[key] = presentDay(row)
@@ -122,31 +128,28 @@ export const writeWeeklyAvailability = async (
     }
 
     await withTransaction(async (client: PoolClient) => {
-        const updated = await client.query(
-            `UPDATE providers SET travel_gap_minutes = $2, manual_fit = $3 WHERE id = $1`,
-            [providerId, input.travel_gap_minutes, input.manual_fit],
-        )
+        const updated = await execute(client, sql`
+            UPDATE ${providers}
+            SET ${col(providers.travel_gap_minutes)} = ${input.travel_gap_minutes},
+                ${col(providers.manual_fit)} = ${input.manual_fit}
+            WHERE ${providers.id} = ${providerId}
+        `)
         if (!updated.rowCount) throw new AppError('Perfil do groomer não encontrado', 404)
-        await client.query(`DELETE FROM provider_weekdays WHERE provider_id = $1`, [providerId])
+        await execute(client, sql`DELETE FROM ${providerWeekdays} WHERE ${providerWeekdays.provider_id} = ${providerId}`)
         for (const key of WEEKDAY_KEYS) {
             const day = days[key]
             if (!day.enabled) continue
             const start = clockToMinutes(day.start)
             const end = clockToMinutes(day.end)
             if (start == null || end == null) throw new AppError('Use o horário no formato HH:MM.', 400)
-            await client.query(
-                `INSERT INTO provider_weekdays(
+            await execute(client, sql`
+                INSERT INTO ${providerWeekdays}(
                     provider_id, weekday, start_minute, end_minute, break_start_minute, break_end_minute
-                 ) VALUES ($1,$2,$3,$4,$5,$6)`,
-                [
-                    providerId,
-                    weekdayIndex(key),
-                    start,
-                    end,
-                    clockToMinutes(day.break_start),
-                    clockToMinutes(day.break_end),
-                ],
-            )
+                ) VALUES (
+                    ${providerId}, ${weekdayIndex(key)}, ${start}, ${end},
+                    ${clockToMinutes(day.break_start)}, ${clockToMinutes(day.break_end)}
+                )
+            `)
         }
     })
 
@@ -212,11 +215,10 @@ export const createManualAppointment = async (
             throw new AppError('Este horário não está disponível. Escolha outro horário.', 409)
         }
         const id = randomUUID()
-        await client.query(
-            `INSERT INTO provider_manual_appointments(id, provider_id, starts_at, ends_at)
-             VALUES ($1,$2,$3,$4)`,
-            [id, providerId, starts.toISOString(), ends.toISOString()],
-        )
+        await execute(client, sql`
+            INSERT INTO ${providerManualAppointments}(id, provider_id, starts_at, ends_at)
+            VALUES (${id}, ${providerId}, ${starts.toISOString()}, ${ends.toISOString()})
+        `)
         return { id, starts_at: starts.toISOString(), ends_at: ends.toISOString() }
     })
 }

@@ -1,7 +1,8 @@
 import { PoolClient } from 'pg'
 import { logger } from '../../config/logger.config'
-import { executor } from '../../shared/db/transaction'
+import { col, execute, sql } from '../../shared/db/drizzle'
 import { Booking, BookingStatus, CreateBookingInput } from './booking.types'
+import { bookings } from './booking.table'
 import { QueryType } from '../../types/pagination.types'
 
 const serviceNameSql = `COALESCE(NULLIF(btrim(provider_services.custom_name), ''), services.name)`
@@ -15,13 +16,13 @@ const normalizeBookingRow = (row: Booking | undefined): Booking | null => {
     }
 }
 
-const bookingDetailSelect = `
+const bookingDetailSelect = sql`
         SELECT
-            bookings.*,
+            ${bookings}.*,
             users.name as customer_name,
             users.email as customer_email,
-            COALESCE(bookings.service_price, provider_services.price)::float AS price,
-            ${serviceNameSql} as service_name,
+            COALESCE(${bookings.service_price}, provider_services.price)::float AS price,
+            ${sql.raw(serviceNameSql)} as service_name,
             provider_users.name as provider_name,
             provider_users.id as provider_user_id,
             reviews.id as review_id,
@@ -31,14 +32,14 @@ const bookingDetailSelect = `
             pets.size AS pet_size,
             pets.age_years AS pet_age_years,
             pets.notes AS pet_notes
-        FROM bookings
-        LEFT JOIN pets ON bookings.pet_id = pets.id
-        LEFT JOIN users ON bookings.customer_id = users.id
-        LEFT JOIN provider_services ON bookings.provider_service_id = provider_services.id
+        FROM ${bookings}
+        LEFT JOIN pets ON ${bookings.pet_id} = pets.id
+        LEFT JOIN users ON ${bookings.customer_id} = users.id
+        LEFT JOIN provider_services ON ${bookings.provider_service_id} = provider_services.id
         LEFT JOIN services ON provider_services.service_id = services.id
         LEFT JOIN providers ON provider_services.provider_id = providers.id
         LEFT JOIN users AS provider_users ON providers.user_id = provider_users.id
-        LEFT JOIN reviews ON reviews.booking_id = bookings.id
+        LEFT JOIN reviews ON reviews.booking_id = ${bookings.id}
 `
 
 export const insertBooking = async (
@@ -47,45 +48,25 @@ export const insertBooking = async (
     initialStatus: BookingStatus,
     client?: PoolClient,
 ): Promise<Booking | null> => {
-    const result = await executor(client).query(
-        `
-        INSERT INTO bookings
-            (id, customer_id, pet_id, provider_service_id, scheduled_at, customer_location, booking_status, customer_latitude, customer_longitude, duration_minutes, service_price)
-        VALUES
-            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    const result = await execute<Booking>(client, sql`
+        INSERT INTO ${bookings} (
+            id, customer_id, pet_id, provider_service_id, scheduled_at, customer_location, booking_status,
+            customer_latitude, customer_longitude, duration_minutes, service_price
+        )
+        VALUES (
+            ${bookingId}, ${bookingInput.customer_id}, ${bookingInput.pet_id}, ${bookingInput.provider_service_id},
+            ${bookingInput.scheduled_at}, ${bookingInput.customer_location}, ${initialStatus},
+            ${bookingInput.customer_latitude ?? null}, ${bookingInput.customer_longitude ?? null},
+            ${bookingInput.duration_minutes ?? null}, ${bookingInput.service_price ?? null}
+        )
         RETURNING *
-        `,
-        [
-            bookingId,
-            bookingInput.customer_id,
-            bookingInput.pet_id,
-            bookingInput.provider_service_id,
-            bookingInput.scheduled_at,
-            bookingInput.customer_location,
-            initialStatus,
-            bookingInput.customer_latitude,
-            bookingInput.customer_longitude,
-            bookingInput.duration_minutes,
-            bookingInput.service_price,
-        ],
-    )
+    `)
     return result.rows[0] || null
 }
 
 export const findBookingById = async (bookingId: string, client?: PoolClient): Promise<Booking | null> => {
-    const result = await executor(client).query(
-        `${bookingDetailSelect} WHERE bookings.id = $1`,
-        [bookingId],
-    )
+    const result = await execute<Booking>(client, sql`${bookingDetailSelect} WHERE ${bookings.id} = ${bookingId}`)
     return normalizeBookingRow(result.rows[0])
-}
-
-export const findProviderUserId = async (providerId: string, client?: PoolClient): Promise<string | null> => {
-    const result = await executor(client).query(
-        `SELECT user_id FROM providers WHERE id = $1`,
-        [providerId],
-    )
-    return result.rows[0]?.user_id ?? null
 }
 
 export const findOpenBookingRequest = async (
@@ -95,18 +76,16 @@ export const findOpenBookingRequest = async (
     scheduledAt: string,
     client?: PoolClient,
 ): Promise<Booking | null> => {
-    const result = await executor(client).query(
-        `${bookingDetailSelect}
-        WHERE bookings.customer_id = $1
-          AND bookings.pet_id = $2
-          AND provider_users.id = $3
-          AND bookings.scheduled_at = $4::timestamptz
-          AND bookings.booking_status IS DISTINCT FROM $5
-        ORDER BY bookings.created_at ASC
+    const result = await execute<Booking>(client, sql`
+        ${bookingDetailSelect}
+        WHERE ${bookings.customer_id} = ${customerId}
+          AND ${bookings.pet_id} = ${petId}
+          AND provider_users.id = ${providerUserId}
+          AND ${bookings.scheduled_at} = ${scheduledAt}::timestamptz
+          AND ${bookings.booking_status} IS DISTINCT FROM ${BookingStatus.CANCELLED}
+        ORDER BY ${bookings.created_at} ASC
         LIMIT 1
-        `,
-        [customerId, petId, providerUserId, scheduledAt, BookingStatus.CANCELLED],
-    )
+    `)
     return normalizeBookingRow(result.rows[0])
 }
 
@@ -117,38 +96,19 @@ export const fetchBookings = async (
     status?: BookingStatus,
     client?: PoolClient,
 ): Promise<Booking[] | null> => {
-    const conditions: string[] = []
-    const values: unknown[] = []
-    let index = 1
-
-    if (customer_id) {
-        conditions.push(`bookings.customer_id = $${index++}`)
-        values.push(customer_id)
-    }
-
-    if (provider_user_id) {
-        conditions.push(`provider_users.id=$${index++}`)
-        values.push(provider_user_id)
-    }
-
-    if (status) {
-        conditions.push(`bookings.booking_status = $${index++}`)
-        values.push(status)
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const conditions = []
+    if (customer_id) conditions.push(sql`${bookings.customer_id} = ${customer_id}`)
+    if (provider_user_id) conditions.push(sql`provider_users.id = ${provider_user_id}`)
+    if (status) conditions.push(sql`${bookings.booking_status} = ${status}`)
+    const whereClause = conditions.length > 0 ? sql`WHERE ${sql.join(conditions, sql` AND `)}` : sql``
     const page = query?.page || 1
     const limit = query?.limit || 10
     const offset = (page - 1) * limit
-    values.push(limit)
-    values.push(offset)
-
-    const result = await executor(client).query(
-        `
+    const result = await execute<Booking>(client, sql`
         SELECT
-            bookings.*,
+            ${bookings}.*,
             services.name AS service_name,
-            COALESCE(bookings.service_price, provider_services.price)::float AS price,
+            COALESCE(${bookings.service_price}, provider_services.price)::float AS price,
             provider_users.name AS provider_name,
             customer_users.name AS customer_name,
             pets.name AS pet_name,
@@ -157,19 +117,17 @@ export const fetchBookings = async (
             pets.size AS pet_size,
             pets.age_years AS pet_age_years,
             pets.notes AS pet_notes
-        FROM bookings
-        LEFT JOIN pets ON bookings.pet_id = pets.id
-        LEFT JOIN provider_services ON bookings.provider_service_id = provider_services.id
+        FROM ${bookings}
+        LEFT JOIN pets ON ${bookings.pet_id} = pets.id
+        LEFT JOIN provider_services ON ${bookings.provider_service_id} = provider_services.id
         LEFT JOIN services ON provider_services.service_id = services.id
         LEFT JOIN providers ON provider_services.provider_id = providers.id
         LEFT JOIN users AS provider_users ON providers.user_id = provider_users.id
-        LEFT JOIN users AS customer_users ON bookings.customer_id = customer_users.id
+        LEFT JOIN users AS customer_users ON ${bookings.customer_id} = customer_users.id
         ${whereClause}
-        ORDER BY bookings.created_at DESC
-        LIMIT $${index++} OFFSET $${index}
-        `,
-        values,
-    )
+        ORDER BY ${bookings.created_at} DESC
+        LIMIT ${limit} OFFSET ${offset}
+    `)
     return result.rows || null
 }
 
@@ -179,70 +137,58 @@ export const updateBookingStatus = async (
     client?: PoolClient,
     expectedStatus?: BookingStatus,
 ): Promise<Booking | null> => {
-    const values: unknown[] = [update.booking_status, update.booking_status, bookingId]
-    let expectedFilter = ''
-    if (expectedStatus) {
-        values.push(expectedStatus)
-        expectedFilter = ` AND booking_status = $${values.length}`
-    }
-    values.push(update.mark_provider_rejected === true)
-    const rejectedParam = `$${values.length}`
-    const result = await executor(client).query(
-        `
-        UPDATE bookings
-        SET booking_status = $1,
-        updated_at = NOW(),
-        completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE completed_at END,
-        provider_rejected_at = CASE WHEN ${rejectedParam} THEN NOW() ELSE provider_rejected_at END
-        WHERE id = $3${expectedFilter}
+    const expectedFilter = expectedStatus
+        ? sql` AND ${bookings.booking_status} = ${expectedStatus}`
+        : sql``
+    const result = await execute<Booking>(client, sql`
+        UPDATE ${bookings}
+        SET ${col(bookings.booking_status)} = ${update.booking_status},
+            ${col(bookings.updated_at)} = NOW(),
+            ${col(bookings.completed_at)} = CASE WHEN ${update.booking_status} = 'completed' THEN NOW() ELSE ${bookings.completed_at} END,
+            ${col(bookings.provider_rejected_at)} = CASE WHEN ${update.mark_provider_rejected === true} THEN NOW() ELSE ${bookings.provider_rejected_at} END
+        WHERE ${bookings.id} = ${bookingId}${expectedFilter}
         RETURNING *
-        `,
-        values,
-    )
+    `)
     return result.rows[0] || null
 }
 
 export const lockBookingStatus = async (bookingId: string, client: PoolClient): Promise<BookingStatus | null> => {
-    const result = await client.query(
-        `SELECT booking_status FROM bookings WHERE id = $1 FOR UPDATE`,
-        [bookingId],
-    )
+    const result = await execute<{ booking_status: BookingStatus }>(client, sql`
+        SELECT ${bookings.booking_status} AS booking_status
+        FROM ${bookings}
+        WHERE ${bookings.id} = ${bookingId}
+        FOR UPDATE
+    `)
     return result.rows[0]?.booking_status ?? null
 }
 
 export const moveBookingToPendingConfirmation = async (bookingId: string, client: PoolClient): Promise<Booking | null> => {
-    const result = await client.query(
-        `
-        UPDATE bookings
-        SET booking_status = $1,
-            updated_at = NOW()
-        WHERE id = $2 AND booking_status = $3
+    const result = await execute<Booking>(client, sql`
+        UPDATE ${bookings}
+        SET ${col(bookings.booking_status)} = ${BookingStatus.PENDING_CONFIRMATION},
+            ${col(bookings.updated_at)} = NOW()
+        WHERE ${bookings.id} = ${bookingId}
+          AND ${bookings.booking_status} = ${BookingStatus.PENDING_PAYMENT}
         RETURNING *
-        `,
-        [BookingStatus.PENDING_CONFIRMATION, bookingId, BookingStatus.PENDING_PAYMENT],
-    )
+    `)
     return result.rows[0] || null
 }
 
 export const providerServiceHasBookings = async (providerServiceId: string, client?: PoolClient): Promise<boolean> => {
-    const result = await executor(client).query(
-        `SELECT 1 FROM bookings WHERE provider_service_id = $1 LIMIT 1`,
-        [providerServiceId],
-    )
+    const result = await execute(client, sql`
+        SELECT 1 FROM ${bookings} WHERE ${bookings.provider_service_id} = ${providerServiceId} LIMIT 1
+    `)
     return (result.rowCount ?? 0) > 0
 }
 
 export const isBookingProvider = async (bookingId: string, userId: string, client?: PoolClient): Promise<boolean> => {
     try {
-        const result = await executor(client).query(
-            `
-            SELECT 1 FROM bookings
-            JOIN provider_services ON bookings.provider_service_id = provider_services.id
+        const result = await execute(client, sql`
+            SELECT 1 FROM ${bookings}
+            JOIN provider_services ON ${bookings.provider_service_id} = provider_services.id
             JOIN providers ON provider_services.provider_id = providers.id
-            WHERE bookings.id = $1 AND providers.user_id = $2
-            `,
-            [bookingId, userId],
-        )
+            WHERE ${bookings.id} = ${bookingId} AND providers.user_id = ${userId}
+        `)
         return (result.rowCount ?? 0) > 0
     } catch (error) {
         logger.error('booking ownership check error', { error })

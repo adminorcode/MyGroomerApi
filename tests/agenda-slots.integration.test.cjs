@@ -224,7 +224,7 @@ test('AC-05 a stale confirmation cannot resurrect a cancelled booking after its 
         while (Date.now() < deadline && !waiting) {
             const activity = await pool.query(`SELECT a.pid FROM pg_stat_activity a
                 WHERE a.wait_event_type = 'Lock' AND $1 = ANY(pg_blocking_pids(a.pid))
-                  AND a.query LIKE '%UPDATE bookings%'`, [blocker.processID])
+                  AND a.query LIKE '%UPDATE "bookings"%'`, [blocker.processID])
             waiting = activity.rowCount > 0
             if (!waiting) await new Promise(resolve => setTimeout(resolve, 25))
         }
