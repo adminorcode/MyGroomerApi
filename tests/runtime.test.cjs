@@ -141,8 +141,9 @@ test('migrated modules keep payment boundaries and shared errors', () => {
     }
     const bookingService = fs.readFileSync(path.join(src, 'modules/booking/booking.service.ts'), 'utf8')
     assert.equal(bookingService.includes('withTransaction'), true)
-    assert.equal(bookingService.includes('pet.service'), true)
-    assert.equal(bookingService.includes('provider.service'), true)
+    const bookingSlots = fs.readFileSync(path.join(src, 'modules/booking/booking-slots.service.ts'), 'utf8')
+    assert.equal(bookingSlots.includes('pet.service'), true)
+    assert.equal(bookingSlots.includes('provider.service'), true)
 })
 
 test('offer updates reject nonpositive prices and ownership changes', () => {

@@ -1,6 +1,13 @@
 import { Request, Response } from 'express'
 import { AppError } from '../../shared/errors'
 import { BookingStatus } from './booking.types'
+import { BookingSlotInput, listBookingSlots } from './booking-slots.service'
+
+export const getBookingSlots = async (req: Request, res: Response) => {
+    if (!req.user) throw new AppError('Não autorizado', 401)
+    const result = await listBookingSlots(req.user.id, req.query as unknown as BookingSlotInput)
+    res.json({ success: true, data: result })
+}
 import {
     changeBookingStatusForActor,
     createBookingForCustomer,

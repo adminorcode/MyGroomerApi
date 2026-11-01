@@ -57,3 +57,37 @@ test('manual time outside the routine is not covered and an occupied slot is ski
     }).map(slots.minutesToClock)
     assert.deepEqual(starts, ['10:30', '12:00'])
 })
+
+test('appointments require the whole travel gap before and after, blocks only their interval', () => {
+    const futureAppointment = slots.generateStartMinutes({
+        day: openMonday, durationMinutes: 60, travelGapMinutes: 30,
+        occupied: [{ start: 10 * 60 + 15, end: 11 * 60 }],
+    }).map(slots.minutesToClock)
+    assert.deepEqual(futureAppointment, ['11:30'])
+    const block = slots.generateStartMinutes({
+        day: openMonday, durationMinutes: 60, travelGapMinutes: 30,
+        occupied: [{ start: 10 * 60, end: 11 * 60, travel: false }],
+    }).map(slots.minutesToClock)
+    assert.deepEqual(block, ['09:00', '11:00'])
+    assert.equal(slots.intervalConflicts(9 * 60, 10 * 60, { start: 10 * 60 + 30, end: 11 * 60 }, 30), false)
+    assert.equal(slots.intervalConflicts(9 * 60, 10 * 60, { start: 10 * 60 + 29, end: 11 * 60 }, 30), true)
+})
+
+test('cross-midnight occupancy is retained and invalid calendar dates are rejected', () => {
+    assert.equal(slots.weekdayOf('2026-02-30'), null)
+    assert.equal(slots.weekdayOf('2026-11-31'), null)
+    const result = slots.generateStartMinutes({
+        day: { ...openMonday, start: '00:00', end: '03:00' },
+        durationMinutes: 30, travelGapMinutes: 30,
+        occupied: [{ start: -30, end: 30 }],
+    }).map(slots.minutesToClock)
+    assert.deepEqual(result, ['01:00', '02:00'])
+})
+
+test('a service must fit fully before the break and before the end of the day', () => {
+    const result = slots.generateStartMinutes({
+        day: { ...openMonday, end: '16:00', break_start: '12:00', break_end: '13:00' },
+        durationMinutes: 90, travelGapMinutes: 30,
+    }).map(slots.minutesToClock)
+    assert.deepEqual(result, ['09:00', '13:00'])
+})

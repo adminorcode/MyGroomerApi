@@ -4,8 +4,7 @@ import { logger } from '../../config/logger.config'
 import { isLocalTestMode } from '../../config/runtime.config'
 import { CANCELLATION_FEE_RATE } from '../../constants'
 import { getPaymentGateway } from '../../integrations/payments/payment-gateway'
-import { findPetForOwner } from '../pet/pet.service'
-import { findProviderServiceById } from '../provider/provider.service'
+import { revalidateBookingSlot } from './booking-slots.service'
 import { AppError } from '../../shared/errors'
 import { withTransaction } from '../../shared/db/transaction'
 import { Booking, BookingStatus, CreateBookingInput } from './booking.types'
@@ -118,76 +117,61 @@ export const createBookingForCustomer = async (actor: BookingActor, body: Create
         throw new AppError('Informe o pet, o serviço, a data e o local do atendimento', 400)
     }
 
-    const pet = await findPetForOwner(pet_id, actor.id)
-    if (!pet) throw new AppError('Pet não encontrado', 404)
+    return withTransaction(async client => {
+        const prepared = await revalidateBookingSlot(actor.id, { pet_id, provider_service_id, scheduled_at }, client)
+        const bookingId = randomUUID()
+        const input: CreateBookingInput = {
+            customer_id: actor.id,
+            pet_id,
+            provider_service_id,
+            scheduled_at,
+            customer_location,
+            customer_latitude,
+            customer_longitude,
+            duration_minutes: prepared.duration_minutes,
+            service_price: prepared.price,
+        }
 
-    const providerService = await findProviderServiceById(provider_service_id)
-    if (!providerService || providerService.is_active === false) {
-        throw new AppError('Serviço do groomer não encontrado', 404)
-    }
+        if (isLocalTestMode()) {
+            const payment = await getPaymentGateway().initializePayment({
+                email: actor.email ?? '', amountMinor: 0, reference: `local_${bookingId}`,
+            })
+            if (payment.mode !== 'disabled' || payment.authorizationUrl !== null) {
+                throw new AppError('Payments are disabled in local test mode', 503)
+            }
+            const booking = await insertBooking(bookingId, input, BookingStatus.PENDING_CONFIRMATION, client)
+            if (!booking) throw new AppError('Não foi possível criar o agendamento', 500)
+            return {
+                message: 'Agendamento de teste criado sem pagamento' as const,
+                data: { booking, authorization_url: null, payment_mode: 'disabled' as const },
+            }
+        }
 
-    const bookingId = randomUUID()
-    const input: CreateBookingInput = {
-        customer_id: actor.id,
-        pet_id,
-        provider_service_id,
-        scheduled_at,
-        customer_location,
-        customer_latitude,
-        customer_longitude,
-    }
-
-    if (isLocalTestMode()) {
-        const prepared = await getPaymentGateway().initializePayment({
+        // The agenda lock is kept until the booking and payment commit. A losing
+        // concurrent request never initializes an external payment.
+        const reference = `boame_${bookingId}_${Date.now()}`
+        const initialized = await getPaymentGateway().initializePayment({
             email: actor.email ?? '',
-            amountMinor: 0,
-            reference: `local_${bookingId}`,
+            amountMinor: amountMinor(prepared.price),
+            reference,
+            callbackUrl: 'https://boame.app/payment/callback',
         })
-        if (prepared.mode !== 'disabled' || prepared.authorizationUrl !== null) {
-            throw new AppError('Payments are disabled in local test mode', 503)
-        }
-        const booking = await insertBooking(bookingId, input, BookingStatus.PENDING_CONFIRMATION)
+        if (!initialized.authorizationUrl) throw new AppError('Payment initialization failed!', 500)
+        const booking = await insertBooking(bookingId, input, BookingStatus.PENDING_PAYMENT, client)
         if (!booking) throw new AppError('Não foi possível criar o agendamento', 500)
-        return {
-            message: 'Agendamento de teste criado sem pagamento' as const,
-            data: {
-                booking,
-                authorization_url: null,
-                payment_mode: 'disabled' as const,
-            },
-        }
-    }
-
-    const reference = `boame_${bookingId}_${Date.now()}`
-    const initialized = await getPaymentGateway().initializePayment({
-        email: actor.email ?? '',
-        amountMinor: amountMinor(providerService.price),
-        reference,
-        callbackUrl: 'https://boame.app/payment/callback',
-    })
-    if (!initialized.authorizationUrl) throw new AppError('Payment initialization failed!', 500)
-
-    const booking = await withTransaction(async (client) => {
-        const created = await insertBooking(bookingId, input, BookingStatus.PENDING_PAYMENT, client)
-        if (!created) throw new AppError('Não foi possível criar o agendamento', 500)
         const payment = await insertPayment({
             customer_id: actor.id,
-            booking_id: created.id,
-            amount: providerService.price,
+            booking_id: booking.id,
+            amount: prepared.price,
             payment_date: new Date(),
             paystack_reference: reference,
         }, client)
         if (!payment) throw new AppError('Não foi possível iniciar o pagamento', 500)
-        return created
+        return {
+            message: 'Serviço agendado com sucesso' as const,
+            data: { booking, authorization_url: initialized.authorizationUrl },
+        }
     })
-
-    return {
-        message: 'Serviço agendado com sucesso' as const,
-        data: {
-            booking,
-            authorization_url: initialized.authorizationUrl,
-        },
-    }
 }
 
 export const getAuthorizedBooking = async (actor: BookingActor | undefined, bookingId: string | undefined) => {
@@ -297,7 +281,7 @@ export const changeBookingStatusForActor = async (
         }
     }
 
-    const updated = await updateBookingStatus(bookingId, { booking_status: bookingStatus })
-    if (!updated) throw new AppError('Agendamento não encontrado ou a atualização falhou', 404)
+    const updated = await updateBookingStatus(bookingId, { booking_status: bookingStatus }, undefined, booking.booking_status)
+    if (!updated) throw new AppError('O agendamento foi alterado. Atualize os dados antes de tentar novamente.', 409)
     return updated
 }

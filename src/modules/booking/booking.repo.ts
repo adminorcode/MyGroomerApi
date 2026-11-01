@@ -13,9 +13,9 @@ export const insertBooking = async (
     const result = await executor(client).query(
         `
         INSERT INTO bookings
-            (id, customer_id, pet_id, provider_service_id, scheduled_at, customer_location, booking_status, customer_latitude, customer_longitude)
+            (id, customer_id, pet_id, provider_service_id, scheduled_at, customer_location, booking_status, customer_latitude, customer_longitude, duration_minutes, service_price)
         VALUES
-            ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
         `,
         [
@@ -28,6 +28,8 @@ export const insertBooking = async (
             initialStatus,
             bookingInput.customer_latitude,
             bookingInput.customer_longitude,
+            bookingInput.duration_minutes,
+            bookingInput.service_price,
         ],
     )
     return result.rows[0] || null
@@ -39,7 +41,7 @@ export const findBookingById = async (bookingId: string, client?: PoolClient): P
             bookings.*,
             users.name as customer_name,
             users.email as customer_email,
-            provider_services.price,
+            COALESCE(bookings.service_price, provider_services.price) AS price,
             services.name as service_name,
             provider_users.name as provider_name,
             provider_users.id as provider_user_id,
@@ -103,7 +105,7 @@ export const fetchBookings = async (
         SELECT
             bookings.*,
             services.name AS service_name,
-            provider_services.price,
+            COALESCE(bookings.service_price, provider_services.price) AS price,
             provider_users.name AS provider_name,
             customer_users.name AS customer_name,
             pets.name AS pet_name,
@@ -132,6 +134,7 @@ export const updateBookingStatus = async (
     bookingId: string,
     update: { booking_status: BookingStatus },
     client?: PoolClient,
+    expectedStatus?: BookingStatus,
 ): Promise<Booking | null> => {
     const result = await executor(client).query(
         `
@@ -139,10 +142,10 @@ export const updateBookingStatus = async (
         SET booking_status = $1,
         updated_at = NOW(),
         completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE completed_at END
-        WHERE id = $3
+        WHERE id = $3${expectedStatus ? ' AND booking_status = $4' : ''}
         RETURNING *
         `,
-        [update.booking_status, update.booking_status, bookingId],
+        [update.booking_status, update.booking_status, bookingId, ...(expectedStatus ? [expectedStatus] : [])],
     )
     return result.rows[0] || null
 }

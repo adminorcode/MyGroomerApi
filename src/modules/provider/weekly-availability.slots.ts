@@ -38,6 +38,7 @@ export const weekdayOf = (date: string): WeekdayKey | null => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
     const probe = new Date(`${date}T12:00:00-03:00`)
     if (Number.isNaN(probe.getTime())) return null
+    if (saoPauloParts(probe)?.date !== date) return null
     const shortName = new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/Sao_Paulo',
         weekday: 'short',
@@ -112,7 +113,13 @@ export const routineCovers = (day: DayWindow, startMinute: number, endMinute: nu
     return windows.some(([open, close]) => startMinute >= open && endMinute <= close)
 }
 
-export type OccupiedInterval = { start: number, end: number }
+/** Unavailable intervals have no travel requirement; appointments do. */
+export type OccupiedInterval = { start: number, end: number, travel?: boolean }
+
+export const intervalConflicts = (start: number, end: number, block: OccupiedInterval, gap: number): boolean => {
+    const padding = block.travel === false ? 0 : gap
+    return block.start < end + padding && block.end + padding > start
+}
 
 export const generateStartMinutes = (input: {
     day: DayWindow
@@ -128,9 +135,10 @@ export const generateStartMinutes = (input: {
         let cursor = open
         while (cursor + input.durationMinutes <= close) {
             const slotEnd = cursor + input.durationMinutes
-            const hit = occupied.find(block => block.start < slotEnd && block.end > cursor)
+            const hit = occupied.find(block => intervalConflicts(cursor, slotEnd, block, input.travelGapMinutes))
             if (hit) {
-                cursor = Math.max(cursor + 1, hit.end + input.travelGapMinutes)
+                const padding = hit.travel === false ? 0 : input.travelGapMinutes
+                cursor = Math.max(cursor + 1, Math.ceil(hit.end + padding))
                 continue
             }
             slots.push(cursor)

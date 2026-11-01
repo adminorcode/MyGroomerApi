@@ -1,5 +1,7 @@
 import { getPool } from '../../config/database.config'
 import { Pet, SavePetInput } from './pet.types'
+import { PoolClient } from 'pg'
+import { executor } from '../../shared/db/transaction'
 
 export const insertPet = async (ownerId: string, input: SavePetInput): Promise<Pet | null> => {
     const pool = getPool()
@@ -21,10 +23,10 @@ export const listPetsByOwner = async (ownerId: string): Promise<Pet[]> => {
     return result.rows
 }
 
-export const findPetForOwner = async (petId: string, ownerId: string): Promise<Pet | null> => {
-    const pool = getPool()
+export const findPetForOwner = async (petId: string, ownerId: string, client?: PoolClient, lock = false): Promise<Pet | null> => {
+    const pool = executor(client)
     const result = await pool.query(
-        `SELECT * FROM pets WHERE id = $1 AND owner_id = $2`,
+        `SELECT * FROM pets WHERE id = $1 AND owner_id = $2${lock && client ? ' FOR SHARE' : ''}`,
         [petId, ownerId],
     )
     return result.rows[0] || null
