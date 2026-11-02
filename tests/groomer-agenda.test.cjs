@@ -55,13 +55,15 @@ test('today includes an appointment that starts in the day and excludes the next
             appointment({ id: 'later', scheduled_at: '2026-11-01T17:00:00-03:00' }),
             appointment({ id: 'today', scheduled_at: '2026-11-01T09:00:00-03:00', pet_name: null, pet_photo_url: null }),
             appointment({ id: 'boundary', scheduled_at: from, booking_status: 'pending_confirmation' }),
+            appointment({ id: 'traveling', scheduled_at: '2026-11-01T11:00:00-03:00', booking_status: 'en_route' }),
             appointment({ id: 'next-day', scheduled_at: to }),
             appointment({ id: 'cancelled', booking_status: 'cancelled' }),
         ],
         blocks: [],
         manualAppointments: [],
     })
-    assert.deepEqual(agenda.appointments.map(item => item.id), ['boundary', 'today', 'later'])
+    assert.deepEqual(agenda.appointments.map(item => item.id), ['boundary', 'today', 'traveling', 'later'])
+    assert.equal(agenda.appointments.find(item => item.id === 'traveling').booking_status, 'en_route')
     assert.equal(agenda.timezone, 'America/Sao_Paulo')
     const withoutPet = agenda.appointments.find(item => item.id === 'today')
     assert.equal(withoutPet.pet_name, null)
