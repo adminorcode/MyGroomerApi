@@ -58,6 +58,7 @@ const bookingStatusLabel: Record<BookingStatus, string> = {
     [BookingStatus.PENDING_PAYMENT]: 'pagamento pendente',
     [BookingStatus.PENDING_CONFIRMATION]: 'aguardando confirmação',
     [BookingStatus.CONFIRMED]: 'confirmado',
+    [BookingStatus.EN_ROUTE]: 'em deslocamento',
     [BookingStatus.IN_PROGRESS]: 'em andamento',
     [BookingStatus.COMPLETED]: 'concluído',
     [BookingStatus.CANCELLED]: 'cancelado',
@@ -230,7 +231,8 @@ export const changeBookingStatusForActor = async (
     const validTransitions: Record<BookingStatus, BookingStatus[]> = {
         [BookingStatus.PENDING_PAYMENT]: [BookingStatus.CANCELLED],
         [BookingStatus.PENDING_CONFIRMATION]: [BookingStatus.CONFIRMED, BookingStatus.CANCELLED],
-        [BookingStatus.CONFIRMED]: [BookingStatus.IN_PROGRESS, BookingStatus.CANCELLED],
+        [BookingStatus.CONFIRMED]: [BookingStatus.EN_ROUTE, BookingStatus.IN_PROGRESS, BookingStatus.CANCELLED],
+        [BookingStatus.EN_ROUTE]: [BookingStatus.IN_PROGRESS, BookingStatus.CANCELLED],
         [BookingStatus.IN_PROGRESS]: [BookingStatus.COMPLETED],
         [BookingStatus.COMPLETED]: [],
         [BookingStatus.CANCELLED]: [],
@@ -251,6 +253,7 @@ export const changeBookingStatusForActor = async (
     if (isCustomer && !isAdmin) {
         if (
             bookingStatus === BookingStatus.CONFIRMED ||
+            bookingStatus === BookingStatus.EN_ROUTE ||
             bookingStatus === BookingStatus.IN_PROGRESS ||
             bookingStatus === BookingStatus.COMPLETED
         ) {

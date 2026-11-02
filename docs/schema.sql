@@ -40,6 +40,7 @@ CREATE TYPE public.booking_status_type AS ENUM (
     'pending_payment',
     'pending_confirmation',
     'confirmed',
+    'en_route',
     'cancelled',
     'in_progress',
     'completed'
