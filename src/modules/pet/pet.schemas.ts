@@ -7,6 +7,11 @@ const emptyNotes = (value: unknown) => {
     return trimmed === '' ? null : trimmed
 }
 
+const anamnesisText = z.preprocess(
+    emptyNotes,
+    z.string().max(500, 'A anamnese deve ter no máximo 500 caracteres').nullable().optional(),
+)
+
 export const savePetSchema = z.object({
     name: z.string({ error: 'Informe o nome do pet' }).trim().min(1, 'Informe o nome do pet').max(60, 'O nome deve ter no máximo 60 caracteres'),
     species: z.enum(PET_SPECIES, { error: 'Informe a espécie' }),
@@ -17,6 +22,12 @@ export const savePetSchema = z.object({
         emptyNotes,
         z.string().max(500, 'As observações devem ter no máximo 500 caracteres').nullable().optional(),
     ),
+    allergies: anamnesisText,
+    medications: anamnesisText,
+    health_conditions: anamnesisText,
+    behavior: anamnesisText,
+    special_care: anamnesisText,
+    vaccination_up_to_date: z.boolean({ error: 'Informe se a vacinação está em dia' }).nullable().optional(),
 })
 
 export const petIdSchema = z.object({

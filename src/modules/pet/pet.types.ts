@@ -14,6 +14,12 @@ export type Pet = {
     age_years: number
     notes: string | null
     photo_url: string | null
+    allergies: string | null
+    medications: string | null
+    health_conditions: string | null
+    vaccination_up_to_date: boolean | null
+    behavior: string | null
+    special_care: string | null
     created_at: Date
     updated_at: Date
 }
@@ -25,4 +31,10 @@ export type SavePetInput = {
     size: PetSize
     age_years: number
     notes: string | null
+    allergies: string | null
+    medications: string | null
+    health_conditions: string | null
+    vaccination_up_to_date: boolean | null
+    behavior: string | null
+    special_care: string | null
 }
