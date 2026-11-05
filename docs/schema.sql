@@ -613,6 +613,48 @@ ALTER TABLE ONLY public.transactions
 
 
 --
+-- Migration 020 — anamnese do pet e notas do groomer.
+-- pets nasce na migration 005; este trecho documenta o acréscimo.
+--
+
+ALTER TABLE public.pets
+    ADD COLUMN allergies character varying(500),
+    ADD COLUMN medications character varying(500),
+    ADD COLUMN health_conditions character varying(500),
+    ADD COLUMN vaccination_up_to_date boolean,
+    ADD COLUMN behavior character varying(500),
+    ADD COLUMN special_care character varying(500);
+
+CREATE TABLE public.pet_anamnesis_notes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    pet_id uuid NOT NULL,
+    provider_id uuid NOT NULL,
+    booking_id uuid NOT NULL,
+    note character varying(1000) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pet_anamnesis_notes_not_blank CHECK ((btrim((note)::text) <> ''::text))
+);
+
+ALTER TABLE ONLY public.pet_anamnesis_notes
+    ADD CONSTRAINT pet_anamnesis_notes_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.pet_anamnesis_notes
+    ADD CONSTRAINT pet_anamnesis_notes_booking_id_key UNIQUE (booking_id);
+
+CREATE INDEX pet_anamnesis_notes_pet_provider_idx
+    ON public.pet_anamnesis_notes USING btree (pet_id, provider_id, created_at DESC);
+
+ALTER TABLE ONLY public.pet_anamnesis_notes
+    ADD CONSTRAINT pet_anamnesis_notes_pet_id_fkey FOREIGN KEY (pet_id) REFERENCES public.pets(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.pet_anamnesis_notes
+    ADD CONSTRAINT pet_anamnesis_notes_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES public.providers(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.pet_anamnesis_notes
+    ADD CONSTRAINT pet_anamnesis_notes_booking_id_fkey FOREIGN KEY (booking_id) REFERENCES public.bookings(id) ON DELETE CASCADE;
+
+--
 -- PostgreSQL database dump complete
 --
 

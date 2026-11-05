@@ -18,6 +18,12 @@ const toInput = (body: SavePetSchema): SavePetInput => ({
     size: body.size,
     age_years: body.age_years,
     notes: body.notes ?? null,
+    allergies: body.allergies ?? null,
+    medications: body.medications ?? null,
+    health_conditions: body.health_conditions ?? null,
+    vaccination_up_to_date: body.vaccination_up_to_date ?? null,
+    behavior: body.behavior ?? null,
+    special_care: body.special_care ?? null,
 })
 
 export const createPet = async (req: Request, res: Response) => {
