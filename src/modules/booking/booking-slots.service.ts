@@ -7,7 +7,7 @@ import { saoPauloParts } from '../provider/weekly-availability.slots'
 import { findProviderServiceById } from '../provider/provider.service'
 import { findPetForOwner } from '../pet/pet.service'
 
-export type BookingSlotInput = { provider_service_id: string, pet_id: string, date: string }
+export type BookingSlotInput = { provider_service_id: string, pet_id: string, date: string, exclude_booking_id?: string }
 
 /** Acquires the provider lock before reading menu, pet and routine. */
 export const prepareBookingSlots = async (ownerId: string, input: BookingSlotInput, client: PoolClient) => {
@@ -27,7 +27,7 @@ export const prepareBookingSlots = async (ownerId: string, input: BookingSlotInp
     if (!Number.isInteger(duration) || duration <= 0 || duration > 600 || priceValue == null || !Number.isFinite(price) || price < 0) {
         throw new AppError('Este serviço não tem preço e duração disponíveis para o porte do pet.', 409)
     }
-    const slots = (await readWeeklySlots(offer.provider_id, input.date, duration, client))
+    const slots = (await readWeeklySlots(offer.provider_id, input.date, duration, client, input.exclude_booking_id))
         .filter(instant => new Date(instant).getTime() > Date.now())
     return { slots, duration_minutes: duration, price, timezone: 'America/Sao_Paulo' as const }
 }
@@ -38,7 +38,7 @@ export const listBookingSlots = async (ownerId: string, input: BookingSlotInput)
 
 export const revalidateBookingSlot = async (
     ownerId: string,
-    input: { pet_id: string, provider_service_id: string, scheduled_at: string },
+    input: { pet_id: string, provider_service_id: string, scheduled_at: string, exclude_booking_id?: string },
     client: PoolClient,
 ) => {
     const instant = new Date(input.scheduled_at)

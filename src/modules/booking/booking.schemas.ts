@@ -12,6 +12,14 @@ export const bookingSlotsQuerySchema = z.object({
     provider_service_id: z.uuid('Serviço do groomer inválido'),
     pet_id: z.uuid('Selecione um pet'),
     date: z.string().refine(isCalendarDate, { message: 'Informe uma data válida no formato YYYY-MM-DD' }),
+    reschedule_booking_id: z.uuid('Agendamento inválido').optional(),
+}).strict()
+
+export const rescheduleBookingSchema = z.object({
+    scheduled_at: z.iso.datetime().refine(
+        date => new Date(date) > new Date(),
+        { message: 'A data deve estar no futuro' },
+    ),
 }).strict()
 
 export const bookingIdSchema = z.object({

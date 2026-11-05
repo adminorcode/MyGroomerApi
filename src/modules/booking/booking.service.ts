@@ -6,7 +6,7 @@ import { CANCELLATION_FEE_RATE } from '../../constants'
 import { getPaymentGateway } from '../../integrations/payments/payment-gateway'
 import { findProviderServiceById, findProviderUserId } from '../provider/provider.service'
 import { lockProviderAgenda } from '../provider/agenda.service'
-import { revalidateBookingSlot } from './booking-slots.service'
+import { BookingSlotInput, listBookingSlots, prepareBookingSlots, revalidateBookingSlot } from './booking-slots.service'
 import { AppError } from '../../shared/errors'
 import { databaseError } from '../../shared/db/drizzle'
 import { withTransaction } from '../../shared/db/transaction'
@@ -24,6 +24,7 @@ import {
     moveBookingToPendingConfirmation,
     providerServiceHasBookings,
     updateBookingStatus,
+    updateBookingSchedule,
 } from './booking.repo'
 
 export { findBookingById, lockBookingStatus }
@@ -301,4 +302,90 @@ export const changeBookingStatusForActor = async (
     )
     if (!updated) throw new AppError('O agendamento foi alterado. Atualize os dados antes de tentar novamente.', 409)
     return updated
+}
+
+export const listBookingSlotsForActor = async (
+    actor: BookingActor | undefined,
+    query: BookingSlotInput & { reschedule_booking_id?: string },
+) => {
+    if (!actor) throw new AppError('Não autorizado', 401)
+    if (query.reschedule_booking_id) {
+        const booking = await findBookingById(query.reschedule_booking_id)
+        if (!booking) throw new AppError('Agendamento não encontrado', 404)
+        if (!await isBookingProvider(query.reschedule_booking_id, actor.id)) {
+            throw new AppError('Só o profissional reagenda este atendimento.', 403)
+        }
+        if (!booking.pet_id) throw new AppError('Agendamento não encontrado', 404)
+        if (query.pet_id !== booking.pet_id || query.provider_service_id !== booking.provider_service_id) {
+            throw new AppError('Dados inválidos', 400)
+        }
+        return withTransaction(client => prepareBookingSlots(booking.customer_id, {
+            provider_service_id: query.provider_service_id,
+            pet_id: query.pet_id,
+            date: query.date,
+            exclude_booking_id: booking.id,
+        }, client))
+    }
+    if (actor.role !== Role.CUSTOMER) throw new AppError('Só o tutor consulta horários desta forma', 403)
+    return listBookingSlots(actor.id, query)
+}
+
+export const rescheduleBookingForProvider = async (
+    actor: BookingActor | undefined,
+    bookingId: string | undefined,
+    scheduledAt: string | undefined,
+) => {
+    if (!actor) throw new AppError('Não autenticado', 401)
+    if (!bookingId) throw new AppError('Identificador do agendamento ausente', 400)
+    if (!scheduledAt) throw new AppError('Informe a nova data e horário', 400)
+    if (new Date(scheduledAt) <= new Date()) {
+        throw new AppError('A data deve estar no futuro', 400)
+    }
+
+    return withTransaction(async (client) => {
+        const booking = await findBookingById(bookingId, client)
+        if (!booking) throw new AppError('Agendamento não encontrado', 404)
+        const isProvider = await isBookingProvider(bookingId, actor.id, client)
+        if (booking.customer_id === actor.id) {
+            throw new AppError('Só o profissional reagenda este atendimento.', 403)
+        }
+        if (!isProvider && actor.role !== Role.ADMIN) {
+            throw new AppError('Você não participa deste agendamento', 403)
+        }
+
+        const offerRef = await findProviderServiceById(booking.provider_service_id, client)
+        if (!offerRef) throw new AppError('Agendamento não encontrado', 404)
+        await lockProviderAgenda(offerRef.provider_id, client)
+
+        const currentStatus = await lockBookingStatus(bookingId, client)
+        if (
+            !currentStatus
+            || (currentStatus !== BookingStatus.PENDING_CONFIRMATION && currentStatus !== BookingStatus.CONFIRMED)
+        ) {
+            throw new AppError('Este atendimento não pode ser reagendado.', 400)
+        }
+        if (!booking.pet_id) throw new AppError('Agendamento não encontrado', 404)
+
+        const prepared = await revalidateBookingSlot(booking.customer_id, {
+            pet_id: booking.pet_id,
+            provider_service_id: booking.provider_service_id,
+            scheduled_at: scheduledAt,
+            exclude_booking_id: bookingId,
+        }, client)
+
+        const updated = await updateBookingSchedule(
+            bookingId,
+            scheduledAt,
+            prepared.duration_minutes,
+            client,
+            [BookingStatus.PENDING_CONFIRMATION, BookingStatus.CONFIRMED],
+        )
+        if (!updated) {
+            throw new AppError('O agendamento foi alterado. Atualize os dados antes de tentar novamente.', 409)
+        }
+
+        const detail = await findBookingById(bookingId, client)
+        if (!detail) throw new AppError('Agendamento não encontrado', 404)
+        return detail
+    })
 }

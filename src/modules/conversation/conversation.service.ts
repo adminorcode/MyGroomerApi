@@ -4,7 +4,7 @@ import { col, execute, sql } from '../../shared/db/drizzle'
 import { Conversation, CreateConversationInput, CreateMessageInput, Message, UpdateMessageInput } from './conversation.types'
 import { conversations, messages } from './conversation.table'
 import { QueryType } from '../../types/pagination.types'
-import { findBookingById } from '../booking/booking.service'
+import { findBookingById, isBookingProvider } from '../booking/booking.repo'
 import { findProviderByUserId } from '../provider/provider.service'
 import { AppError } from '../../shared/errors'
 
@@ -51,6 +51,7 @@ export const findConversationsBetweenUsers = async (customerId: string, provider
         const result = await execute<Conversation>(undefined, sql`
             SELECT * FROM ${conversations}
             WHERE ${conversations.customer_id} = ${customerId} AND ${conversations.provider_id} = ${providerId}
+            ORDER BY ${conversations.created_at} ASC
         `)
         return result.rows
     } catch (error) {
@@ -196,6 +197,25 @@ export const markConversationSeen = async (conversationId: string, userId: strin
     const conversation = await requireConversationMember(conversationId, userId)
     const updated = await markMessagesSeen(conversationId, userId)
     return { conversation, updated }
+}
+
+export const openConversationForProviderBooking = async (providerUserId: string, bookingId: string) => {
+    const booking = await findBookingById(bookingId)
+    if (!booking) throw new AppError('Agendamento não encontrado', 404)
+    if (!await isBookingProvider(bookingId, providerUserId)) {
+        throw new AppError('Você não participa deste agendamento', 403)
+    }
+    const existingForBooking = await findConversationByBookingId(bookingId)
+    if (existingForBooking) return { created: false as const, conversation: existingForBooking }
+    const pair = await findConversationsBetweenUsers(booking.customer_id, providerUserId)
+    if (pair.length > 0) return { created: false as const, conversation: pair[0]! }
+    const conversation = await insertConversation({
+        booking_id: bookingId,
+        customer_id: booking.customer_id,
+        provider_id: providerUserId,
+    })
+    if (!conversation) throw new AppError('Não foi possível criar a conversa', 500)
+    return { created: true as const, conversation }
 }
 
 export const openConversation = async (userId: string, providerId: string, bookingId?: string) => {

@@ -9,10 +9,13 @@ const serviceNameSql = `COALESCE(NULLIF(btrim(provider_services.custom_name), ''
 
 const normalizeBookingRow = (row: Booking | undefined): Booking | null => {
     if (!row) return null
+    const phone = typeof row.customer_phone === 'string' ? row.customer_phone.trim() : row.customer_phone
     return {
         ...row,
+        customer_phone: phone ? phone : null,
         price: row.price == null ? row.price : Number(row.price),
         service_price: row.service_price == null ? row.service_price : Number(row.service_price),
+        duration_minutes: row.duration_minutes == null ? row.duration_minutes : Number(row.duration_minutes),
     }
 }
 
@@ -21,6 +24,7 @@ const bookingDetailSelect = sql`
             ${bookings}.*,
             users.name as customer_name,
             users.email as customer_email,
+            users.phone_number as customer_phone,
             COALESCE(${bookings.service_price}, provider_services.price)::float AS price,
             ${sql.raw(serviceNameSql)} as service_name,
             provider_users.name as provider_name,
@@ -147,6 +151,29 @@ export const updateBookingStatus = async (
             ${col(bookings.completed_at)} = CASE WHEN ${update.booking_status} = 'completed' THEN NOW() ELSE ${bookings.completed_at} END,
             ${col(bookings.provider_rejected_at)} = CASE WHEN ${update.mark_provider_rejected === true} THEN NOW() ELSE ${bookings.provider_rejected_at} END
         WHERE ${bookings.id} = ${bookingId}${expectedFilter}
+        RETURNING *
+    `)
+    return result.rows[0] || null
+}
+
+export const updateBookingSchedule = async (
+    bookingId: string,
+    scheduledAt: string,
+    durationMinutes: number,
+    client: PoolClient,
+    expectedStatuses: BookingStatus[],
+): Promise<Booking | null> => {
+    const statusFilter = sql.join(
+        expectedStatuses.map(status => sql`${bookings.booking_status} = ${status}`),
+        sql` OR `,
+    )
+    const result = await execute<Booking>(client, sql`
+        UPDATE ${bookings}
+        SET ${col(bookings.scheduled_at)} = ${scheduledAt}::timestamptz,
+            ${col(bookings.duration_minutes)} = ${durationMinutes},
+            ${col(bookings.updated_at)} = NOW()
+        WHERE ${bookings.id} = ${bookingId}
+          AND (${statusFilter})
         RETURNING *
     `)
     return result.rows[0] || null
