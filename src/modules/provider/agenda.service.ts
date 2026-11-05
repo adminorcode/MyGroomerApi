@@ -23,16 +23,20 @@ export const readAgendaOccupancy = async (
     providerId: string,
     date: string,
     client?: PoolClient,
+    excludeBookingId?: string,
 ): Promise<OccupiedInterval[]> => {
     const origin = new Date(`${date}T00:00:00-03:00`).getTime()
     const originIso = new Date(origin).toISOString()
+    const excludeFilter = excludeBookingId
+        ? sql` AND b.id <> ${excludeBookingId}`
+        : sql``
     const rows = await execute<{ starts_at: Date | string, ends_at: Date | string, travel: boolean }>(client, sql`
         SELECT starts_at, ends_at, travel FROM (
             SELECT b.scheduled_at AS starts_at,
                    b.scheduled_at + make_interval(mins => COALESCE(b.duration_minutes, 600)) AS ends_at,
                    true AS travel
             FROM bookings b JOIN ${providerServices} ps ON ps.id = b.provider_service_id
-            WHERE ps.provider_id = ${providerId} AND b.booking_status IS DISTINCT FROM 'cancelled'
+            WHERE ps.provider_id = ${providerId} AND b.booking_status IS DISTINCT FROM 'cancelled'${excludeFilter}
             UNION ALL
             SELECT starts_at, ends_at, true FROM ${providerManualAppointments} WHERE provider_id = ${providerId}
             UNION ALL

@@ -161,6 +161,7 @@ export const readWeeklySlots = async (
     date: string,
     durationMinutes: number,
     client?: PoolClient,
+    excludeBookingId?: string,
 ): Promise<string[]> => {
     const key = weekdayOf(date)
     if (!key) throw new AppError('Informe a data.', 400)
@@ -170,7 +171,7 @@ export const readWeeklySlots = async (
     }
     const day = routine.days[key]
     if (!day.enabled) return []
-    const occupied = await readAgendaOccupancy(providerId, date, client)
+    const occupied = await readAgendaOccupancy(providerId, date, client, excludeBookingId)
     return generateStartMinutes({
         day,
         durationMinutes,

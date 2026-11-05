@@ -28,7 +28,8 @@ export interface Booking{
     customer_latitude?: number
     customer_longitude?: number
     customer_name?:string
-    customer_email?:string 
+    customer_email?:string
+    customer_phone?: string | null
     price?:number
     service_name?:string
     provider_name?:string
