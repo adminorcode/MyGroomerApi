@@ -145,6 +145,11 @@ export const addressAutocompleteSchema = z.object({
     text: z.string({ error: 'Informe o endereço' }).trim().min(3, 'Informe pelo menos 3 caracteres').max(200, 'O endereço deve ter no máximo 200 caracteres'),
 }).strict()
 
+export const reverseGeocodeSchema = z.object({
+    latitude: z.coerce.number({ error: 'Informe a latitude' }),
+    longitude: z.coerce.number({ error: 'Informe a longitude' }),
+}).strict()
+
 export const serviceLocationPreviewSchema = z.object({
     address: z.string({ error: 'Informe o endereço-base' }).trim().min(3, 'Informe o endereço-base').max(200, 'O endereço deve ter no máximo 200 caracteres'),
     postal_code: postalCodeSchema,

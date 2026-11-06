@@ -31,10 +31,31 @@ export const validateRuntime = (): void => {
     }
 }
 
+const localHosts = ['localhost', '127.0.0.1', '[::1]']
+const localDatabaseNames = new Set(['mygroomer_dev', 'mygroomer_e2e'])
+
+export const localDatabaseName = (): string => new URL(process.env.DATABASE_URL ?? '').pathname.replace(/^\//, '')
+
+const assertLocalHost = (database: URL): void => {
+    if (!localHosts.includes(database.hostname)) {
+        throw new Error('Demo data is restricted to a local database')
+    }
+}
+
 export const assertLocalTestDatabase = (): void => {
     if (!isLocalTestMode()) throw new Error('Demo data requires LOCAL_TEST_MODE=true')
     const database = new URL(process.env.DATABASE_URL ?? '')
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(database.hostname) || database.pathname !== '/mygroomer_dev') {
-        throw new Error('Demo data is restricted to the local mygroomer_dev database')
+    assertLocalHost(database)
+    if (!localDatabaseNames.has(database.pathname.replace(/^\//, ''))) {
+        throw new Error('Demo data is restricted to the local mygroomer_dev or mygroomer_e2e database')
+    }
+}
+
+export const assertE2eDatabase = (): void => {
+    if (!isLocalTestMode()) throw new Error('E2E reset requires LOCAL_TEST_MODE=true')
+    const database = new URL(process.env.DATABASE_URL ?? '')
+    assertLocalHost(database)
+    if (database.pathname !== '/mygroomer_e2e') {
+        throw new Error('E2E reset is restricted to the local mygroomer_e2e database')
     }
 }

@@ -18,7 +18,7 @@ import { SaveMenuOffer } from "./provider.schemas"
 import { listProviderPayouts } from '../payout/payout.service'
 import { hasBookingsForProviderService } from '../booking/booking.service'
 import { withTransaction } from '../../shared/db/transaction'
-import { autocompleteAddress, locateBaseAddress, locateSearchAddress, lookupPostalAddress } from "./base-geocoder"
+import { autocompleteAddress, inBrazil, locateBaseAddress, locateSearchAddress, lookupPostalAddress, reverseAddress } from "./base-geocoder"
 import { CoverageSearchQuery, ManualAppointmentInput, SaveServiceLocationInput, SaveWeeklyAvailabilityInput, ServiceLocationPreviewQuery, WeeklySlotsQuery } from "./provider.schemas"
 import { readServiceLocation, writeServiceLocation } from "./service-location.service"
 import { createManualAppointment, readWeeklyAvailability, readWeeklySlots, writeWeeklyAvailability } from "./weekly-availability.service"
@@ -333,6 +333,17 @@ export const autocompleteServiceLocation = async (req: Request, res: Response) =
     const text = (req.query as { text?: string }).text ?? ''
     const suggestions = await autocompleteAddress(text)
     res.status(200).json({ success: true, data: suggestions })
+}
+
+export const reverseServiceLocation = async (req: Request, res: Response) => {
+    requireUser(req)
+    const query = req.query as unknown as { latitude: number, longitude: number }
+    if (!inBrazil(query.latitude, query.longitude)) {
+        throw new AppError('O endereço precisa estar no Brasil.', 400)
+    }
+    const suggestion = await reverseAddress(query.latitude, query.longitude)
+    if (!suggestion) throw new AppError('Não foi possível localizar este ponto.', 400)
+    res.status(200).json({ success: true, data: suggestion })
 }
 
 export const lookupServicePostalCode = async (req: Request, res: Response) => {

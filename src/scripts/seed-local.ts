@@ -12,7 +12,7 @@ import { assertLocalTestDatabase } from '../config/runtime.config'
 import { withDatabaseTransaction } from './database'
 
 const id = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`
-const seed = async () => {
+export const seedLocal = async () => {
     assertLocalTestDatabase()
     const password = await hash('admin', 10)
     await withDatabaseTransaction(async client => {
@@ -125,4 +125,7 @@ const seed = async () => {
     })
 }
 
-seed().catch(error => { console.error(`Local seed failed: ${error.message}`); process.exitCode = 1 })
+const entry = process.argv[1]?.replace(/\\/g, '/')
+if (entry && /seed-local\.(ts|js|mjs|cjs)$/.test(entry)) {
+    seedLocal().catch(error => { console.error(`Local seed failed: ${error.message}`); process.exitCode = 1 })
+}
