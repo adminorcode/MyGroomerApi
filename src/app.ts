@@ -7,7 +7,7 @@ import passport from "passport"
 import './integrations/google/passport'
 import { generalLimiter } from "./config/rateLimit.config"
 import { morganMiddleware } from "./shared/http/morgan.middleware"
-import { isGoogleAuthEnabled, isLocalTestMode } from './config/runtime.config'
+import { isGoogleAuthEnabled, isLocalTestMode, localDatabaseName } from './config/runtime.config'
 
 
 
@@ -43,10 +43,12 @@ export const createApp = () => {
     })
 
     app.get('/api/v1/runtime', (_req, res) => {
+        const localTest = isLocalTestMode()
         res.json({ success: true, data: {
-            localTest: isLocalTestMode(),
+            localTest,
             googleAuthEnabled: isGoogleAuthEnabled(),
-            paymentsEnabled: !isLocalTestMode()
+            paymentsEnabled: !localTest,
+            ...(localTest ? { databaseName: localDatabaseName() } : {})
         } })
     })
 

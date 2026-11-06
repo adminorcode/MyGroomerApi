@@ -121,6 +121,40 @@ type AutocompleteHit = {
     postcode?: string
 }
 
+export type AddressSuggestion = {
+    label: string
+    address: string
+    postal_code: string | null
+    latitude: number
+    longitude: number
+}
+
+const suggestionFrom = (hit: AutocompleteHit): AddressSuggestion | null => {
+    if (!Number.isFinite(hit.lat) || !Number.isFinite(hit.lon)) return null
+    const latitude = Number(hit.lat)
+    const longitude = Number(hit.lon)
+    if (!inBrazil(latitude, longitude)) return null
+    const street = hit.address_line1?.trim()
+    const city = hit.city?.trim()
+    const address = [street, city].filter(Boolean).join(', ') || hit.formatted?.trim() || ''
+    if (address.length < 3) return null
+    const postalDigits = String(hit.postcode ?? '').replace(/\D/g, '')
+    return {
+        label: hit.formatted?.trim() || address,
+        address: address.slice(0, 200),
+        postal_code: postalDigits.length === 8 ? postalDigits : null,
+        latitude,
+        longitude,
+    }
+}
+
+const readGeocode = async (url: URL) => {
+    const response = await fetchJson(url.toString(), { Accept: 'application/json' })
+    if (response.status === 401 || response.status === 403 || response.status === 429) throw unavailable()
+    if (!response.ok) throw unavailable()
+    return await response.json() as { results?: AutocompleteHit[] }
+}
+
 export const autocompleteAddress = async (text: string) => {
     const query = text.trim()
     if (query.length < 3) return []
@@ -133,28 +167,27 @@ export const autocompleteAddress = async (text: string) => {
     url.searchParams.set('limit', '5')
     url.searchParams.set('format', 'json')
     url.searchParams.set('apiKey', apiKey)
-    const response = await fetchJson(url.toString(), { Accept: 'application/json' })
-    if (response.status === 401 || response.status === 403 || response.status === 429) throw unavailable()
-    if (!response.ok) throw unavailable()
-    const body = await response.json() as { results?: AutocompleteHit[] }
+    const body = await readGeocode(url)
     return (body.results ?? []).flatMap(hit => {
-        if (!Number.isFinite(hit.lat) || !Number.isFinite(hit.lon)) return []
-        const latitude = Number(hit.lat)
-        const longitude = Number(hit.lon)
-        if (!inBrazil(latitude, longitude)) return []
-        const street = hit.address_line1?.trim()
-        const city = hit.city?.trim()
-        const address = [street, city].filter(Boolean).join(', ') || hit.formatted?.trim() || ''
-        if (address.length < 3) return []
-        const postalDigits = String(hit.postcode ?? '').replace(/\D/g, '')
-        return [{
-            label: hit.formatted?.trim() || address,
-            address: address.slice(0, 200),
-            postal_code: postalDigits.length === 8 ? postalDigits : null,
-            latitude,
-            longitude,
-        }]
+        const suggestion = suggestionFrom(hit)
+        return suggestion ? [suggestion] : []
     })
+}
+
+export const reverseAddress = async (latitude: number, longitude: number): Promise<AddressSuggestion | null> => {
+    if (!inBrazil(latitude, longitude)) return null
+    const apiKey = process.env.GEOAPIFY_API_KEY?.trim()
+    if (!apiKey) throw unavailable()
+    const url = new URL('https://api.geoapify.com/v1/geocode/reverse')
+    url.searchParams.set('lat', String(latitude))
+    url.searchParams.set('lon', String(longitude))
+    url.searchParams.set('lang', 'pt')
+    url.searchParams.set('limit', '1')
+    url.searchParams.set('format', 'json')
+    url.searchParams.set('apiKey', apiKey)
+    const body = await readGeocode(url)
+    const hit = body.results?.[0]
+    return hit ? suggestionFrom(hit) : null
 }
 
 export const lookupPostalAddress = async (postalCode: string) => {

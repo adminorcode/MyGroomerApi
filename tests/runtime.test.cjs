@@ -29,6 +29,13 @@ test('demo seed refuses nonlocal hosts and other databases', () => {
     }
     process.env.DATABASE_URL = 'postgresql://127.0.0.1:5433/mygroomer_dev'
     assert.doesNotThrow(() => runtime.assertLocalTestDatabase())
+    process.env.DATABASE_URL = 'postgresql://127.0.0.1:5433/mygroomer_e2e'
+    assert.doesNotThrow(() => runtime.assertLocalTestDatabase())
+    assert.doesNotThrow(() => runtime.assertE2eDatabase())
+    process.env.DATABASE_URL = 'postgresql://127.0.0.1:5433/mygroomer_dev'
+    assert.throws(() => runtime.assertE2eDatabase(), /mygroomer_e2e/)
+    process.env.DATABASE_URL = 'postgresql://external.example/mygroomer_e2e'
+    assert.throws(() => runtime.assertE2eDatabase(), /restricted/)
     process.env.DATABASE_URL = original
 })
 

@@ -13,7 +13,7 @@ import {
     getProviderEarnings,
     getProviderMenu,
     getServiceLocation,
-    autocompleteServiceLocation,
+    autocompleteServiceLocation, reverseServiceLocation,
     lookupServicePostalCode,
     mapTiles,
     previewServiceLocation,
@@ -25,7 +25,7 @@ import {
     addManualAppointment,
 } from "./provider.controller";
 import { validate, validateQuery } from "../../shared/http/validate.middleware";
-import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, manualAppointmentSchema, providerServiceIdSchema, registerProviderSchema, saveMenuSchema, saveServiceLocationSchema, saveWeeklyAvailabilitySchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema, weeklySlotsQuerySchema } from "./provider.schemas";
+import { addProviderServiceSchema, addressAutocompleteSchema, coverageSearchSchema, manualAppointmentSchema, providerServiceIdSchema, registerProviderSchema, reverseGeocodeSchema, saveMenuSchema, saveServiceLocationSchema, saveWeeklyAvailabilitySchema, serviceLocationPreviewSchema, servicePostalCodeSchema, updateProviderServiceSchema, weeklySlotsQuerySchema } from "./provider.schemas";
 import { getRegistration, putRegistration } from './registration.controller';
 import { saveRegistrationSchema } from './registration.schemas';
 import { deleteGalleryPhoto, deletePublicPhoto, getGalleryPhoto, getOwnPublicProfile, getPublicPhoto, postGalleryPhoto, putPublicDescription, putPublicPhoto, requireProvider } from './public-profile.controller';
@@ -66,6 +66,8 @@ router.get('/menu', authenticate, getProviderMenu)
 router.put('/menu', authenticate, validate(saveMenuSchema), saveProviderMenu)
 
 router.get('/service-location/autocomplete', authenticate, validateQuery(addressAutocompleteSchema), autocompleteServiceLocation)
+
+router.get('/service-location/reverse', authenticate, validateQuery(reverseGeocodeSchema), reverseServiceLocation)
 
 router.get('/service-location/map-tiles', authenticate, mapTiles)
 
