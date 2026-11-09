@@ -21,7 +21,7 @@ import { withTransaction } from '../../shared/db/transaction'
 import { autocompleteAddress, inBrazil, locateBaseAddress, locateSearchAddress, lookupPostalAddress, reverseAddress } from "./base-geocoder"
 import { CoverageSearchQuery, ManualAppointmentInput, SaveServiceLocationInput, SaveWeeklyAvailabilityInput, ServiceLocationPreviewQuery, WeeklySlotsQuery } from "./provider.schemas"
 import { readServiceLocation, writeServiceLocation } from "./service-location.service"
-import { createManualAppointment, readWeeklyAvailability, readWeeklySlots, writeWeeklyAvailability } from "./weekly-availability.service"
+import { createManualAppointment, readOpenDates, readWeeklyAvailability, readWeeklySlots, writeWeeklyAvailability } from "./weekly-availability.service"
 import { QueryType } from "../../types/pagination.types"
 import { CreateProvider, CreateProviderService, PayoutMethod } from "./provider.types"
 import { assignProviderRole } from '../auth/auth.service'
@@ -154,11 +154,26 @@ export const searchCoverage = async (req: Request, res: Response) => {
         throw new AppError('Não foi possível localizar este endereço.', 400)
     }
 
-    const providers = await fetchProvidersByCoverage({
+    if (!req.user) throw new AppError('Não autorizado', 401)
+    const rows = await fetchProvidersByCoverage({
         latitude: resolved.latitude,
         longitude: resolved.longitude,
+        customerId: req.user.id,
         serviceId: query.service_id,
         categoryId: query.category_id,
+        text: query.q,
+    })
+    const openDates = await readOpenDates(rows.map(row => row.provider_id))
+    const providers = rows.map(row => {
+        const open = openDates.get(row.provider_id)
+        return {
+            ...row,
+            is_verified: row.is_verified === true,
+            is_favorite: row.is_favorite === true,
+            attends_at_home: true,
+            available_today: open?.available_today === true,
+            next_available_on: open?.next_available_on ?? null,
+        }
     })
 
     res.status(200).json({

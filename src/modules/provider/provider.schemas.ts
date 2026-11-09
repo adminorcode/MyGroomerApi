@@ -65,6 +65,9 @@ export const updateProviderServiceSchema = z.object({
 
 const blankToUndefined = (value: unknown) => value === '' || value === null || value === undefined ? undefined : value
 
+// Texto só com espaços equivale a ausência de filtro.
+const blankTextToUndefined = (value: unknown) => typeof value === 'string' && value.trim() === '' ? undefined : blankToUndefined(value)
+
 export const coverageSearchSchema = z.object({
     address: z.preprocess(
         blankToUndefined,
@@ -72,16 +75,14 @@ export const coverageSearchSchema = z.object({
     ),
     service_id: z.preprocess(blankToUndefined, z.uuid('Serviço inválido').optional()),
     category_id: z.preprocess(blankToUndefined, z.uuid('Modalidade inválida').optional()),
+    q: z.preprocess(
+        blankTextToUndefined,
+        z.string().trim().min(1, 'Informe o nome, o tipo ou o serviço').max(100, 'A busca deve ter no máximo 100 caracteres').optional(),
+    ),
     latitude: z.preprocess(blankToUndefined, z.coerce.number().min(-90).max(90).optional()),
     longitude: z.preprocess(blankToUndefined, z.coerce.number().min(-180).max(180).optional()),
 }).superRefine((data, ctx) => {
-    if (!data.service_id && !data.category_id) {
-        ctx.addIssue({
-            code: 'custom',
-            path: ['service_id'],
-            message: 'Selecione um serviço ou uma modalidade',
-        })
-    }
+    // Endereço sozinho lista quem atende no raio. Modalidade, serviço e texto só estreitam.
     const hasLatitude = data.latitude !== undefined
     const hasLongitude = data.longitude !== undefined
     if (hasLatitude !== hasLongitude) {

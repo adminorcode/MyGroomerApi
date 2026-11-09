@@ -3,12 +3,14 @@ import { PoolClient } from 'pg'
 import { logger } from '../../config/logger.config'
 import { CACHE_KEYS, CACHE_TTL } from '../../constants'
 import { QueryType } from '../../types/pagination.types'
-import { CoverageProvider, CreateProvider, CreateProviderService, Provider, ProviderService, PublicProfile } from './provider.types'
+import { CoverageSearchRow, CreateProvider, CreateProviderService, Provider, ProviderService, PublicProfile } from './provider.types'
 import { presentPublicProfile } from './public-profile.service'
 import { AppError } from '../../shared/errors'
 import { deleteCache, getCache, setCache } from '../../shared/cache/cache'
 import { col, execute, sql } from '../../shared/db/drizzle'
+import { customerFavoriteProviders } from '../customer-favorite/customer-favorite.table'
 import { providerServices, providers } from './provider.table'
+import { professionalTypes, providerProfessionalTypes } from '../professional-type/professional-type.table'
 
 export const insertProvider = async (provider_input: CreateProvider, client?: PoolClient): Promise<Provider | null> => {
     const result = await execute<Provider>(client, sql`
@@ -217,13 +219,19 @@ export const fetchServiceProviders = async (service_id: string): Promise<Provide
     return rows
 }
 
+// Escapa os curingas do LIKE/ILIKE (o escape padrão do Postgres é a barra invertida).
+const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&')
+
 export const fetchProvidersByCoverage = async (input: {
     latitude: number
     longitude: number
+    customerId: string
     serviceId?: string
     categoryId?: string
-}): Promise<CoverageProvider[]> => {
-    const result = await execute<CoverageProvider>(undefined, sql`
+    text?: string
+}): Promise<CoverageSearchRow[]> => {
+    const pattern = input.text ? `%${escapeLike(input.text)}%` : null
+    const result = await execute<CoverageSearchRow>(undefined, sql`
         WITH located AS (
             SELECT
                 ${providers.id},
@@ -231,6 +239,12 @@ export const fetchProvidersByCoverage = async (input: {
                 ${providers.radius_km},
                 users.name,
                 users.profile_picture,
+                ${providers.is_verified} AS is_verified,
+                EXISTS (
+                    SELECT 1 FROM ${customerFavoriteProviders} fav
+                    WHERE fav.provider_id = ${providers.id}
+                      AND fav.customer_id = ${input.customerId}
+                ) AS is_favorite,
                 (
                     6371 * acos(
                         LEAST(1::double precision, GREATEST(-1::double precision,
@@ -255,37 +269,23 @@ export const fetchProvidersByCoverage = async (input: {
             WHERE ${providers.base_latitude} IS NOT NULL
                 AND ${providers.base_longitude} IS NOT NULL
                 AND ${providers.radius_km} IS NOT NULL
-        )
-        SELECT
-            picked.id,
-            picked.provider_id,
-            picked.service_id,
-            picked.service_name,
-            picked.name,
-            picked.profile_picture,
-            picked.price,
-            picked.average_rating,
-            picked.review_count,
-            picked.radius_km,
-            ROUND(picked.distance_km::numeric, 1)::float AS distance_km
-        FROM (
-            SELECT DISTINCT ON (located.id)
-                ${providerServices.id},
-                located.id AS provider_id,
-                ${providerServices.service_id},
-                COALESCE(services.name, ${providerServices.custom_name}) AS service_name,
-                located.name,
-                located.profile_picture,
-                ${providerServices.price},
-                located.average_rating,
-                located.review_count,
-                located.radius_km,
-                located.distance_km
+        ),
+        nearby AS (
+            SELECT located.*
             FROM located
-            INNER JOIN ${providerServices} ON ${providerServices.provider_id} = located.id
-            LEFT JOIN services ON ${providerServices.service_id} = services.id
             WHERE located.distance_km <= located.radius_km
-                AND ${providerServices.is_active}
+        ),
+        offers AS (
+            SELECT
+                nearby.id AS provider_id,
+                ${providerServices.id} AS offer_id,
+                ${providerServices.service_id} AS service_id,
+                COALESCE(services.name, ${providerServices.custom_name}) AS service_name,
+                ${providerServices.price} AS price
+            FROM nearby
+            INNER JOIN ${providerServices} ON ${providerServices.provider_id} = nearby.id
+            LEFT JOIN services ON ${providerServices.service_id} = services.id
+            WHERE ${providerServices.is_active}
                 AND COALESCE(services.name, ${providerServices.custom_name}) IS NOT NULL
                 AND (${input.serviceId ?? null}::uuid IS NULL OR ${providerServices.service_id} = ${input.serviceId ?? null}::uuid)
                 AND (
@@ -293,9 +293,69 @@ export const fetchProvidersByCoverage = async (input: {
                     OR services.category_id = ${input.categoryId ?? null}::uuid
                     OR ${providerServices.category_id} = ${input.categoryId ?? null}::uuid
                 )
-            ORDER BY located.id, ${providerServices.price} ASC, services.name ASC
-        ) picked
-        ORDER BY picked.distance_km ASC, picked.name ASC
+        ),
+        groomers AS (
+            SELECT nearby.*
+            FROM nearby
+            WHERE EXISTS (SELECT 1 FROM offers WHERE offers.provider_id = nearby.id)
+                AND (
+                    ${pattern}::text IS NULL
+                    OR nearby.name ILIKE ${pattern}
+                    OR EXISTS (
+                        SELECT 1
+                        FROM ${providerProfessionalTypes}
+                        INNER JOIN ${professionalTypes} ON ${professionalTypes.id} = ${providerProfessionalTypes.professional_type_id}
+                        WHERE ${providerProfessionalTypes.provider_id} = nearby.id
+                            AND ${professionalTypes.is_active}
+                            AND ${professionalTypes.name} ILIKE ${pattern}
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM offers
+                        WHERE offers.provider_id = nearby.id
+                            AND offers.service_name ILIKE ${pattern}
+                    )
+                )
+        )
+        SELECT
+            first_offer.offer_id AS id,
+            groomers.id AS provider_id,
+            first_offer.service_id,
+            first_offer.service_name,
+            groomers.name,
+            groomers.profile_picture,
+            first_offer.price::float AS price,
+            groomers.average_rating,
+            groomers.review_count,
+            groomers.radius_km::float AS radius_km,
+            ROUND(groomers.distance_km::numeric, 1)::float AS distance_km,
+            COALESCE((
+                SELECT json_agg(json_build_object(
+                    'id', offers.offer_id,
+                    'service_id', offers.service_id,
+                    'service_name', offers.service_name,
+                    'price', offers.price::float
+                ) ORDER BY lower(offers.service_name), offers.service_name, offers.offer_id)
+                FROM offers
+                WHERE offers.provider_id = groomers.id
+            ), '[]'::json) AS services,
+            COALESCE((
+                SELECT json_agg(types.name ORDER BY lower(types.name), types.name)
+                FROM ${providerProfessionalTypes}
+                INNER JOIN ${professionalTypes} AS types ON types.id = ${providerProfessionalTypes.professional_type_id}
+                WHERE ${providerProfessionalTypes.provider_id} = groomers.id
+                    AND types.is_active
+            ), '[]'::json) AS professional_types,
+            groomers.is_verified,
+            groomers.is_favorite
+        FROM groomers
+        INNER JOIN LATERAL (
+            SELECT offers.offer_id, offers.service_id, offers.service_name, offers.price
+            FROM offers
+            WHERE offers.provider_id = groomers.id
+            ORDER BY offers.price ASC, offers.service_name ASC, offers.offer_id ASC
+            LIMIT 1
+        ) first_offer ON true
+        ORDER BY groomers.distance_km ASC, groomers.name ASC
     `)
     return result.rows
 }

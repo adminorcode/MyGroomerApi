@@ -20,7 +20,7 @@ import {
     minutesToClock,
 } from './weekly-availability.slots'
 import { ManualAppointmentInput, SaveWeeklyAvailabilityInput } from './provider.schemas'
-import { providerManualAppointments, providerWeekdays, providers } from './provider.table'
+import { providerAgendaBlocks, providerManualAppointments, providerServices, providerWeekdays, providers } from './provider.table'
 
 export type WeeklyAvailability = {
     days: Record<WeekdayKey, DayWindow>
@@ -154,6 +154,111 @@ export const writeWeeklyAvailability = async (
     })
 
     return readWeeklyAvailability(providerId)
+}
+
+const OPENING_MINUTES = 30
+const AVAILABILITY_HORIZON = 8
+
+const addSaoPauloDays = (date: string, days: number) => {
+    const noon = new Date(`${date}T12:00:00-03:00`).getTime()
+    return saoPauloParts(new Date(noon + days * 24 * 60 * 60 * 1000))?.date ?? date
+}
+
+export type OpenDate = { available_today: boolean, next_available_on: string | null }
+
+/**
+ * Próxima janela livre de cada groomer, lendo a rotina e a ocupação sem travar a agenda.
+ * Hoje só conta se ainda houver começo livre no futuro. O horizonte é de 7 dias à frente.
+ */
+export const readOpenDates = async (providerIds: string[]): Promise<Map<string, OpenDate>> => {
+    const found = new Map<string, OpenDate>()
+    const unique = [...new Set(providerIds)]
+    for (const id of unique) found.set(id, { available_today: false, next_available_on: null })
+    if (unique.length === 0) return found
+    const now = saoPauloParts(new Date())
+    if (!now) return found
+    const dates = Array.from({ length: AVAILABILITY_HORIZON }, (_, index) => addSaoPauloDays(now.date, index))
+    const rangeStart = new Date(`${dates[0]}T00:00:00-03:00`).toISOString()
+    const rangeEnd = new Date(`${addSaoPauloDays(dates[dates.length - 1], 1)}T02:00:00-03:00`).toISOString()
+    const ids = sql.join(unique.map(id => sql`${id}`), sql`, `)
+
+    const gaps = await execute<{ id: string, travel_gap_minutes: number | null }>(undefined, sql`
+        SELECT ${providers.id} AS id, ${providers.travel_gap_minutes} AS travel_gap_minutes
+        FROM ${providers} WHERE ${providers.id} IN (${ids})
+    `)
+    const gapById = new Map(gaps.rows.map(row => [row.id, asGap(row.travel_gap_minutes)]))
+    const routines = await execute<{
+        provider_id: string
+        weekday: number
+        start_minute: number
+        end_minute: number
+        break_start_minute: number | null
+        break_end_minute: number | null
+    }>(undefined, sql`
+        SELECT provider_id, weekday, start_minute, end_minute, break_start_minute, break_end_minute
+        FROM ${providerWeekdays} WHERE ${providerWeekdays.provider_id} IN (${ids})
+    `)
+    const daysById = new Map<string, Map<number, DayWindow>>()
+    for (const row of routines.rows) {
+        const days = daysById.get(row.provider_id) ?? new Map<number, DayWindow>()
+        days.set(row.weekday, presentDay(row))
+        daysById.set(row.provider_id, days)
+    }
+    const occupied = await execute<{ provider_id: string, starts_at: Date | string, ends_at: Date | string, travel: boolean }>(undefined, sql`
+        SELECT provider_id, starts_at, ends_at, travel FROM (
+            SELECT ${providerServices.provider_id} AS provider_id,
+                   b.scheduled_at AS starts_at,
+                   b.scheduled_at + make_interval(mins => COALESCE(b.duration_minutes, 600)) AS ends_at,
+                   true AS travel
+            FROM bookings b
+            JOIN ${providerServices} ON ${providerServices.id} = b.provider_service_id
+            WHERE ${providerServices.provider_id} IN (${ids})
+              AND b.booking_status IS DISTINCT FROM 'cancelled'
+            UNION ALL
+            SELECT provider_id, starts_at, ends_at, true
+            FROM ${providerManualAppointments}
+            WHERE provider_id IN (${ids})
+            UNION ALL
+            SELECT provider_id, starts_at, ends_at, false
+            FROM ${providerAgendaBlocks}
+            WHERE provider_id IN (${ids})
+        ) occupied
+        WHERE starts_at < ${rangeEnd}::timestamptz AND ends_at > ${rangeStart}::timestamptz
+    `)
+
+    for (const id of unique) {
+        const gap = gapById.get(id)
+        const days = daysById.get(id)
+        if (gap == null || !days) continue
+        let next: string | null = null
+        for (const date of dates) {
+            const key = weekdayOf(date)
+            const day = key ? days.get(weekdayIndex(key)) : undefined
+            if (!day) continue
+            const origin = new Date(`${date}T00:00:00-03:00`).getTime()
+            const blocks = occupied.rows
+                .filter(row => row.provider_id === id)
+                .map(row => ({
+                    start: (new Date(row.starts_at).getTime() - origin) / 60000,
+                    end: (new Date(row.ends_at).getTime() - origin) / 60000,
+                    travel: row.travel,
+                }))
+                .filter(block => block.end > -120 && block.start < 24 * 60 + 120)
+            const slots = generateStartMinutes({
+                day,
+                durationMinutes: OPENING_MINUTES,
+                travelGapMinutes: gap,
+                occupied: blocks,
+            })
+            const open = date === now.date ? slots.some(minute => minute > now.minutes) : slots.length > 0
+            if (open) {
+                next = date
+                break
+            }
+        }
+        found.set(id, { available_today: next === now.date, next_available_on: next })
+    }
+    return found
 }
 
 export const readWeeklySlots = async (
