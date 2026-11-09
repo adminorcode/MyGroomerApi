@@ -61,7 +61,16 @@ export type CreateProviderService = {
     price?: number
 }
 
-export type CoverageProvider = {
+// Oferta do groomer que passou pelos filtros da busca de cobertura.
+export type CoverageService = {
+    id: string
+    service_id: string | null
+    service_name: string
+    price: number
+}
+
+// Um item por groomer. id/service_id/service_name/price referem-se ao serviço de menor preço.
+export type CoverageSearchRow = {
     id: string
     provider_id: string
     service_id: string | null
@@ -73,6 +82,16 @@ export type CoverageProvider = {
     review_count: number
     radius_km: number
     distance_km: number
+    professional_types: string[]
+    services: CoverageService[]
+    is_verified: boolean
+    is_favorite: boolean
+}
+
+export type CoverageProvider = CoverageSearchRow & {
+    attends_at_home: boolean
+    available_today: boolean
+    next_available_on: string | null
 }
 
 export type PublicProfileService = {

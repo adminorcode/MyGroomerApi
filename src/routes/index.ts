@@ -10,6 +10,7 @@ import conversationRouter from '../modules/conversation/conversation.routes'
 import petRouter from '../modules/pet/pet.routes'
 import professionalTypeRouter from '../modules/professional-type/professional-type.routes'
 import customerAddressRouter from '../modules/customer-address/customer-address.routes'
+import customerFavoriteRouter from '../modules/customer-favorite/customer-favorite.routes'
 
 
 const router = Router()
@@ -24,5 +25,6 @@ router.use('/conversations', conversationRouter)
 router.use('/pets', petRouter)
 router.use('/professional-types', professionalTypeRouter)
 router.use('/customer-addresses', customerAddressRouter)
+router.use('/customer-favorites', customerFavoriteRouter)
 
 export default router
