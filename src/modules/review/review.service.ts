@@ -97,11 +97,32 @@ export const createReviewForCustomer = async (
     })
 }
 
+export const fetchPublicReviews = async (query: QueryType, providerUserId: string) => {
+    const limit = query.limit || 20
+    const page = query.page || 1
+    const offset = (page - 1) * limit
+    const result = await execute<{ id: string, rating: number, comment: string | null, created_at: Date, author_name: string | null }>(undefined, sql`
+        SELECT
+            ${reviews.id} AS id,
+            ${reviews.rating} AS rating,
+            ${reviews.comment} AS comment,
+            ${reviews.created_at} AS created_at,
+            users.name AS author_name
+        FROM ${reviews}
+        LEFT JOIN users ON users.id = ${reviews.customer_id}
+        WHERE ${reviews.provider_user_id} = ${providerUserId}
+        ORDER BY ${reviews.created_at} DESC
+        LIMIT ${limit} OFFSET ${offset}
+    `)
+    return result.rows
+}
+
 export const listReviewsForActor = async (
     actor: { id: string; role: Role },
     query: QueryType & { customerId?: string; providerId?: string },
 ) => {
     const page = { limit: query.limit, page: query.page }
+    if (query.providerId && actor.role !== Role.ADMIN) return fetchPublicReviews(page, query.providerId)
     if (actor.role === Role.CUSTOMER) return fetchReviews(page, actor.id)
     if (actor.role === Role.PROVIDER) return fetchReviews(page, undefined, actor.id)
     if (actor.role === Role.ADMIN) return fetchReviews(page, query.customerId, query.providerId)

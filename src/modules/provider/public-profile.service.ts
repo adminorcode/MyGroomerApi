@@ -23,6 +23,7 @@ export const presentPublicProfile = async (providerId: string): Promise<PublicPr
     const entry = await execute(undefined, sql`
         SELECT
             ${providers.id} AS id,
+            ${providers.user_id} AS user_id,
             ${providers.is_verified} AS is_verified,
             ${providers.attendance_rules} AS attendance_rules,
             ${providers.base_address} AS base_address,
@@ -77,6 +78,7 @@ export const presentPublicProfile = async (providerId: string): Promise<PublicPr
 
     return {
         provider_id: row.id as string,
+        user_id: row.user_id as string,
         name: row.name as string,
         photo_url: (row.profile_picture as string | null) ?? null,
         photo_id: (row.public_photo_id as string | null) ?? null,

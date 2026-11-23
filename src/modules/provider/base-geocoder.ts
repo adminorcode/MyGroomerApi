@@ -62,7 +62,7 @@ const writeCache = async (postalCode: string, key: string, latitude: number, lon
 const readViaCep = async (postalCode: string): Promise<PostalPlace | null> => {
     const response = await fetchJson(`https://viacep.com.br/ws/${postalCode}/json/`, {
         Accept: 'application/json',
-        'User-Agent': 'MyGroomer/1.0',
+        'User-Agent': 'TioDePet/1.0',
     })
     if (response.status === 400) return null
     if (!response.ok) throw unavailable()

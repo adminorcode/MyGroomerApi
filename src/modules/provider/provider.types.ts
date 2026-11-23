@@ -113,6 +113,7 @@ export type PublicProfileDay = {
 
 export type PublicProfile = {
     provider_id: string
+    user_id: string
     name: string
     photo_url: string | null
     photo_id: string | null

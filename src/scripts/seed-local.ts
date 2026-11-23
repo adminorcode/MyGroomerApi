@@ -5,7 +5,7 @@ import { bookings } from '../modules/booking/booking.table'
 import { categories, services } from '../modules/catalog/catalog.table'
 import { conversations, messages } from '../modules/conversation/conversation.table'
 import { professionalTypes, providerProfessionalTypes } from '../modules/professional-type/professional-type.table'
-import { providerServices, providers } from '../modules/provider/provider.table'
+import { providerServices, providerWeekdays, providers } from '../modules/provider/provider.table'
 import { reviews } from '../modules/review/review.table'
 import { transactions } from '../modules/payout/transaction.table'
 import { assertLocalTestDatabase } from '../config/runtime.config'
@@ -46,6 +46,11 @@ export const seedLocal = async () => {
             travel_fee_mode = COALESCE(${providers.travel_fee_mode}, 'included'),
             attendance_rules = COALESCE(NULLIF(btrim(${providers.attendance_rules}), ''), 'Atendimento em domicílio. O tutor precisa estar presente durante o serviço.')
             WHERE ${providers.id} = ${id(3)}
+        `)
+        await execute(client, sql`
+            INSERT INTO ${providerWeekdays}(provider_id, weekday, start_minute, end_minute)
+            VALUES (${id(3)}, 0, 540, 1080)
+            ON CONFLICT DO NOTHING
         `)
         await execute(client, sql`
             INSERT INTO ${professionalTypes}(id, name, is_active)

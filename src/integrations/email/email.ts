@@ -10,8 +10,9 @@ export const sendEmail = async (email: string, content: { subject: string, html:
         ? [email]
         : [process.env.RESEND_TEST_EMAIL!]
 
+    const mailbox = process.env.RESEND_FROM_EMAIL?.trim() || 'onboarding@resend.dev'
     const { data, error } = await resend.emails.send({
-        from: 'onboarding@resend.dev',
+        from: `Tio de Pet <${mailbox}>`,
         to,
         subject: content.subject,
         html: content.html,
@@ -27,26 +28,26 @@ export const sendEmail = async (email: string, content: { subject: string, html:
 
 export const sendPasswordResetEmail = async (email: string, token: string) => {
     await sendEmail(email, {
-        subject: 'Password Reset',
+        subject: 'Redefinir senha do Tio de Pet',
         html: `
-            <p>You requested a password reset for your Boame account.</p>
-            <a href="${process.env.CLIENT_URL}/reset-password?token=${token}">Reset your password</a>
-            <p>This link expires in 24 hours.</p>
-            <p>If you didn't request this, ignore this email.</p>
+            <p>Você pediu uma nova senha da sua conta Tio de Pet.</p>
+            <a href="${process.env.CLIENT_URL}/reset-password?token=${token}">Redefinir senha</a>
+            <p>Este link expira em 24 horas.</p>
+            <p>Se você não pediu isso, ignore este e-mail.</p>
         `,
     })
 }
 
 export const sendEmailVerificationToken = async (token: string, email: string) => {
     await sendEmail(email, {
-        subject: 'Email Verification',
+        subject: 'Confirme seu e-mail no Tio de Pet',
         html: `
-            <p>This is to verify that this email belongs to you.</p>
-            <a href="${process.env.CLIENT_URL}/verify-email?token=${token}">Verify your email</a>
-            <p>If the link above doesn't work, copy and open this link:</p>
+            <p>Confirme que este e-mail é seu para usar o Tio de Pet.</p>
+            <a href="${process.env.CLIENT_URL}/verify-email?token=${token}">Confirmar e-mail</a>
+            <p>Se o link acima não abrir, copie e abra este endereço:</p>
             <p>${process.env.CLIENT_URL}/verify-email?token=${token}</p>
-            <p>This link expires in 24 hours.</p>
-            <p>If you didn't request this, ignore this email.</p>
+            <p>Este link expira em 24 horas.</p>
+            <p>Se você não pediu isso, ignore este e-mail.</p>
         `,
     })
 }
