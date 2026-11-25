@@ -13,6 +13,23 @@ test('migration checksums tolerate checkout line endings but reject SQL changes'
     assert.ok(!lf.compatible.has(migrationChecksums('SELECT 3;\n').checksum))
 })
 
+test('pet photo is optional only while developing on the local database', () => {
+    const originalEnv = process.env.NODE_ENV
+    const originalUrl = process.env.DATABASE_URL
+    process.env.NODE_ENV = 'development'
+    process.env.LOCAL_TEST_MODE = 'true'
+    process.env.DATABASE_URL = 'postgresql://127.0.0.1:5433/mygroomer_dev'
+    assert.equal(runtime.isPetPhotoRequired(), false)
+    process.env.DATABASE_URL = 'postgresql://127.0.0.1:5433/mygroomer_e2e'
+    assert.equal(runtime.isPetPhotoRequired(), true)
+    process.env.NODE_ENV = 'test'
+    assert.equal(runtime.isPetPhotoRequired(), true)
+    process.env.NODE_ENV = 'production'
+    assert.equal(runtime.isPetPhotoRequired(), true)
+    process.env.NODE_ENV = originalEnv
+    process.env.DATABASE_URL = originalUrl
+})
+
 test('local mode cannot run in production', () => {
     process.env.NODE_ENV = 'production'
     assert.throws(() => runtime.isLocalTestMode(), /requires NODE_ENV/)

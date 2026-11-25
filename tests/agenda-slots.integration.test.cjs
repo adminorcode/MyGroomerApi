@@ -72,11 +72,11 @@ before(async () => {
             VALUES ($1,$2,$3,50,true,50,80,100,30,60,90)`, [offer, ids.provider, service])
     }
     for (const size of ['small', 'medium', 'large']) {
-        await pool.query(`INSERT INTO pets(id, owner_id, name, species, breed, size, age_years)
-            VALUES ($1,$2,$3,'dog','SRD',$4,2)`, [ids[size], ids.tutor, `Pet ${size}`, size])
+        await pool.query(`INSERT INTO pets(id, owner_id, name, species, breed, size, age_years, weight_kg, photo_url)
+            VALUES ($1,$2,$3,'dog','SRD',$4,2,8.5,$5)`, [ids[size], ids.tutor, `Pet ${size}`, size, 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'])
     }
-    await pool.query(`INSERT INTO pets(id, owner_id, name, species, breed, size, age_years)
-        VALUES ($1,$2,'Pet alheio','cat','SRD','small',3)`, [ids.foreignPet, ids.professional])
+    await pool.query(`INSERT INTO pets(id, owner_id, name, species, breed, size, age_years, weight_kg, photo_url)
+        VALUES ($1,$2,'Pet alheio','cat','SRD','small',3,4.2,$3)`, [ids.foreignPet, ids.professional, 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'])
     const tutor = await request('/auth/login', 'POST', { email: emails.tutor, password: 'admin' }, null)
     const professional = await request('/auth/login', 'POST', { email: emails.professional, password: 'admin' }, null)
     assert.equal(tutor.status, 200)

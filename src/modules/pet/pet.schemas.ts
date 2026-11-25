@@ -1,5 +1,11 @@
 import { z } from 'zod'
+import { publicPhotoSchema } from '../provider/public-profile.schemas'
 import { PET_SIZES, PET_SPECIES } from './pet.types'
+
+const isStoredWeightKg = (value: number) => {
+    const cents = Math.round(value * 100)
+    return cents >= 1 && cents <= 99999 && Math.abs(value * 100 - cents) < 1e-6
+}
 
 const emptyNotes = (value: unknown) => {
     if (typeof value !== 'string') return value
@@ -18,6 +24,11 @@ export const savePetSchema = z.object({
     breed: z.string({ error: 'Informe a raça' }).trim().min(1, 'Informe a raça').max(80, 'A raça deve ter no máximo 80 caracteres'),
     size: z.enum(PET_SIZES, { error: 'Informe o porte' }),
     age_years: z.number({ error: 'Informe a idade em anos' }).int('Informe a idade em anos').min(0, 'A idade não pode ser negativa').max(40, 'Informe uma idade de até 40 anos'),
+    weight_kg: z.number({ error: 'Informe o peso em kg' })
+        .gt(0, 'O peso precisa ser maior que zero')
+        .lte(999.99, 'Informe um peso de até 999,99 kg')
+        .refine(isStoredWeightKg, 'Informe o peso com até duas casas decimais'),
+    photo: publicPhotoSchema.optional(),
     notes: z.preprocess(
         emptyNotes,
         z.string().max(500, 'As observações devem ter no máximo 500 caracteres').nullable().optional(),

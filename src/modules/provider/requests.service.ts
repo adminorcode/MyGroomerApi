@@ -21,6 +21,10 @@ type RequestRow = {
     scheduled_at: Date | string
     customer_location: string | null
     price: string | number | null
+    pet_weight_kg: string | number | null
+    pet_photo_url: string | null
+    pet_photo_id: string | null
+    pet_has_stored_photo: boolean | null
 }
 
 const asNumberOrNull = (value: string | number | null): number | null => {
@@ -47,7 +51,11 @@ export const listProviderRequests = async (providerId: string, query: ProviderRe
                 COALESCE(NULLIF(btrim(${providerServices.custom_name}), ''), services.name) AS service_name,
                 b.scheduled_at,
                 b.customer_location,
-                COALESCE(b.service_price, ${providerServices.price}) AS price
+                COALESCE(b.service_price, ${providerServices.price}) AS price,
+                pets.weight_kg AS pet_weight_kg,
+                pets.photo_url AS pet_photo_url,
+                pets.photo_id AS pet_photo_id,
+                (pets.photo_id IS NOT NULL) AS pet_has_stored_photo
              FROM bookings b
              JOIN ${providerServices} ON provider_services.id = b.provider_service_id
              LEFT JOIN services ON services.id = provider_services.service_id
@@ -85,6 +93,10 @@ export const listProviderRequests = async (providerId: string, query: ProviderRe
             scheduled_at: new Date(row.scheduled_at).toISOString(),
             customer_location: row.customer_location,
             price: asNumberOrNull(row.price),
+            pet_weight_kg: row.pet_weight_kg == null || row.pet_weight_kg === '' ? null : Number(row.pet_weight_kg),
+            pet_photo_url: row.pet_photo_url,
+            pet_photo_id: row.pet_photo_id,
+            pet_has_stored_photo: row.pet_has_stored_photo === true,
         })),
     }
 }

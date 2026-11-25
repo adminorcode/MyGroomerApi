@@ -1,6 +1,14 @@
 import 'dotenv/config'
 import { AppError } from '../shared/errors'
 
+/** Foto do pet é opcional só no desenvolvimento local (`mygroomer_dev`). Teste e produção exigem. */
+export const isPetPhotoRequired = (): boolean => {
+    const env = process.env.NODE_ENV ?? ''
+    if (env === 'production' || env === 'test') return true
+    if (!isLocalTestMode()) return env !== 'development'
+    return localDatabaseName() !== 'mygroomer_dev'
+}
+
 export const isLocalTestMode = (): boolean => {
     const enabled = process.env.LOCAL_TEST_MODE === 'true'
     if (enabled && !['development', 'test'].includes(process.env.NODE_ENV ?? '')) {

@@ -94,7 +94,7 @@ before(async () => {
         [ids.offer, ids.provider, seedId(5)],
     )
     await pool.query(
-        `INSERT INTO pets(id, owner_id, name, species, breed, size, age_years, notes) VALUES ($1,$2,'Luna','dog','Border Collie','small',3,'É dócil e gosta de carinho.')`,
+        `INSERT INTO pets(id, owner_id, name, species, breed, size, age_years, notes, weight_kg, photo_url) VALUES ($1,$2,'Luna','dog','Border Collie','small',3,'É dócil e gosta de carinho.',7.5,'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')`,
         [ids.pet, ids.tutor],
     )
     const tutor = await request('/auth/login', 'POST', { email: emails.tutor, password: 'admin' }, null)
