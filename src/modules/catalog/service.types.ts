@@ -1,9 +1,10 @@
 export interface Service {
     id: string
     name: string
-    image?: string
-    category_id?: string
-    description?: string
+    image?: string | null
+    category_id?: string | null
+    description?: string | null
+    is_active: boolean
     created_at?: string
     updated_at?: string
 }
@@ -15,7 +16,15 @@ export interface ServiceWithCategory extends Service {
 
 export type CreateService = {
     name: string
-    image?: string
-    description?: string
+    image?: string | null
+    description?: string | null
     category_id: string
+}
+
+export type UpdateService = {
+    name?: string
+    image?: string | null
+    description?: string | null
+    category_id?: string
+    is_active?: boolean
 }
