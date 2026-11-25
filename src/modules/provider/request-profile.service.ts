@@ -25,6 +25,8 @@ type PetRow = {
     age_years: number
     notes: string | null
     photo_url: string | null
+    photo_id: string | null
+    weight_kg: string | number | null
     allergies: string | null
     medications: string | null
     health_conditions: string | null
@@ -104,7 +106,7 @@ export const getProviderRequestProfile = async (providerId: string, bookingId: s
     const pet = booking.pet_id
         ? (await execute<PetRow>(undefined, sql`
             SELECT
-                id, name, species, breed, size, age_years, notes, photo_url,
+                id, name, species, breed, size, age_years, notes, photo_url, photo_id, weight_kg,
                 allergies, medications, health_conditions, vaccination_up_to_date, behavior, special_care
             FROM pets
             WHERE id = ${booking.pet_id}
@@ -167,6 +169,9 @@ export const getProviderRequestProfile = async (providerId: string, bookingId: s
             age_years: pet.age_years,
             notes: pet.notes,
             photo_url: pet.photo_url,
+            photo_id: pet.photo_id,
+            has_stored_photo: Boolean(pet.photo_id),
+            weight_kg: pet.weight_kg == null || pet.weight_kg === '' ? null : Number(pet.weight_kg),
         } : null,
         anamnesis: pet ? {
             allergies: pet.allergies,
@@ -214,5 +219,20 @@ export const saveAnamnesisNote = async (providerId: string, bookingId: string, n
         booking_id: row.booking_id,
         note: row.note,
         created_at: row.created_at,
+    }
+}
+
+export const readRequestPetPhoto = async (providerId: string, bookingId: string) => {
+    const booking = await loadBooking(bookingId)
+    assertOwner(booking, providerId)
+    if (!booking.pet_id) throw new AppError('Foto do pet não encontrada', 404)
+    const result = await execute<{ photo: Buffer | null, photo_mime: string | null }>(undefined, sql`
+        SELECT photo, photo_mime FROM pets WHERE id = ${booking.pet_id}
+    `)
+    const row = result.rows[0]
+    if (!row?.photo || !row.photo_mime) throw new AppError('Foto do pet não encontrada', 404)
+    return {
+        mimeType: row.photo_mime,
+        content: Buffer.isBuffer(row.photo) ? row.photo : Buffer.from(row.photo),
     }
 }

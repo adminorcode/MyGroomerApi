@@ -5,7 +5,8 @@ import { lockProviderAgenda } from '../provider/agenda.service'
 import { readWeeklySlots } from '../provider/weekly-availability.service'
 import { saoPauloParts } from '../provider/weekly-availability.slots'
 import { findProviderServiceById } from '../provider/provider.service'
-import { findPetForOwner } from '../pet/pet.service'
+import { isPetPhotoRequired } from '../../config/runtime.config'
+import { findPetForOwner, petHasPhoto } from '../pet/pet.service'
 
 export type BookingSlotInput = { provider_service_id: string, pet_id: string, date: string, exclude_booking_id?: string }
 
@@ -16,6 +17,15 @@ export const prepareBookingSlots = async (ownerId: string, input: BookingSlotInp
     await lockProviderAgenda(offerRef.provider_id, client)
     const pet = await findPetForOwner(input.pet_id, ownerId, client, true)
     if (!pet) throw new AppError('Pet não encontrado', 404)
+    // Reagendar um atendimento já marcado não pode exigir que o groomer complete o pet.
+    if (!input.exclude_booking_id) {
+        if (pet.weight_kg == null || pet.weight_kg <= 0) {
+            throw new AppError('Complete o peso do pet antes de usá-lo.', 409)
+        }
+        if (isPetPhotoRequired() && !petHasPhoto(pet)) {
+            throw new AppError('Complete a foto do pet antes de usá-lo.', 409)
+        }
+    }
     const offer = await findProviderServiceById(input.provider_service_id, client, true)
     if (!offer || offer.provider_id !== offerRef.provider_id || offer.is_active === false) {
         throw new AppError('Serviço do groomer não encontrado', 404)

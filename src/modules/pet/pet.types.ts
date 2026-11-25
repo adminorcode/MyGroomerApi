@@ -14,6 +14,9 @@ export type Pet = {
     age_years: number
     notes: string | null
     photo_url: string | null
+    photo_id: string | null
+    has_photo: boolean
+    weight_kg: number | null
     allergies: string | null
     medications: string | null
     health_conditions: string | null
@@ -31,6 +34,8 @@ export type SavePetInput = {
     size: PetSize
     age_years: number
     notes: string | null
+    weight_kg: number
+    photo: { mime_type: 'image/jpeg' | 'image/png', bytes: Buffer } | null
     allergies: string | null
     medications: string | null
     health_conditions: string | null

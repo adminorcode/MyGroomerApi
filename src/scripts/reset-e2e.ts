@@ -35,8 +35,8 @@ const reset = async () => {
     const pets = new Pool({ connectionString: process.env.DATABASE_URL })
     try {
         await pets.query(
-            `INSERT INTO pets (id, owner_id, name, species, breed, size, age_years)
-             VALUES ($1, $2, 'Josefino', 'dog', 'SRD', 'small', 4)
+            `INSERT INTO pets (id, owner_id, name, species, breed, size, age_years, weight_kg, photo_url)
+             VALUES ($1, $2, 'Josefino', 'dog', 'SRD', 'small', 4, 8.5, 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')
              ON CONFLICT (id) DO NOTHING`,
             [petId, tutorId]
         )

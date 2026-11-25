@@ -34,7 +34,7 @@ import { getAgenda, getAgendaBlocks, postAgendaBlock, removeAgendaBlock } from '
 import { agendaBlockSchema, agendaBlockParamsSchema, agendaQuerySchema } from './agenda.schemas';
 import { getProviderRequests } from './requests.controller';
 import { providerRequestsQuerySchema } from './requests.schemas';
-import { getRequestProfile, putAnamnesisNote } from './request-profile.controller';
+import { getRequestPetPhoto, getRequestProfile, putAnamnesisNote } from './request-profile.controller';
 import { anamnesisNoteSchema, requestBookingParamsSchema } from './request-profile.schemas';
 import { validateParams } from '../../shared/http/validate.middleware';
 
@@ -99,6 +99,7 @@ router.put('/weekly-availability', authenticate, validate(saveWeeklyAvailability
 router.get('/agenda', authenticate, validateQuery(agendaQuerySchema), getAgenda)
 router.get('/requests', authenticate, validateQuery(providerRequestsQuerySchema), getProviderRequests)
 router.get('/requests/:bookingId/profile', authenticate, validateParams(requestBookingParamsSchema), getRequestProfile)
+router.get('/requests/:bookingId/pet-photo', authenticate, validateParams(requestBookingParamsSchema), getRequestPetPhoto)
 router.put('/requests/:bookingId/anamnesis-note', authenticate, validateParams(requestBookingParamsSchema), validate(anamnesisNoteSchema), putAnamnesisNote)
 router.get('/agenda-blocks', authenticate, getAgendaBlocks)
 router.post('/agenda-blocks', authenticate, validate(agendaBlockSchema), postAgendaBlock)

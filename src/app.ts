@@ -7,7 +7,7 @@ import passport from "passport"
 import './integrations/google/passport'
 import { generalLimiter } from "./config/rateLimit.config"
 import { morganMiddleware } from "./shared/http/morgan.middleware"
-import { isGoogleAuthEnabled, isLocalTestMode, localDatabaseName } from './config/runtime.config'
+import { isGoogleAuthEnabled, isLocalTestMode, isPetPhotoRequired, localDatabaseName } from './config/runtime.config'
 
 
 
@@ -27,7 +27,9 @@ export const createApp = () => {
             (req.method === 'PUT' && req.path === '/api/v1/providers/registration')
         const publicPhoto = (req.method === 'PUT' && req.path === '/api/v1/providers/me/photo') ||
             (req.method === 'POST' && req.path === '/api/v1/providers/me/gallery')
-        if (registration || publicPhoto) next()
+        const petWrite = (req.method === 'POST' && req.path === '/api/v1/pets') ||
+            (req.method === 'PATCH' && /^\/api\/v1\/pets\/[^/]+$/.test(req.path))
+        if (registration || publicPhoto || petWrite) next()
         else defaultJson(req, res, next)
     })
     app.use(cors())
@@ -48,6 +50,7 @@ export const createApp = () => {
             localTest,
             googleAuthEnabled: isGoogleAuthEnabled(),
             paymentsEnabled: !localTest,
+            petPhotoRequired: isPetPhotoRequired(),
             ...(localTest ? { databaseName: localDatabaseName() } : {})
         } })
     })

@@ -33,6 +33,11 @@ const request = async (route, method='GET', body, token) => {
     const response = await fetch(base+route,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(10000)})
     return { status:response.status, body:await response.json() }
 }
+const tinyPhoto = { name:'pet.png', mime_type:'image/png', size:70, base64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' }
+const readImage = async (route, token) => {
+    const response = await fetch(base+route,{headers:token?{Authorization:`Bearer ${token}`}:{},signal:AbortSignal.timeout(10000)})
+    return { status:response.status, type:response.headers.get('content-type'), bytes:Buffer.from(await response.arrayBuffer()) }
+}
 const login = async (email, secret = fixturePassword) => {
     const result = await request('/auth/login','POST',{email,password:secret})
     assert.equal(result.status,200,email)
@@ -50,7 +55,11 @@ before(async () => {
     const url=new URL(process.env.DATABASE_URL)
     assert.ok(['127.0.0.1','localhost','[::1]'].includes(url.hostname) && url.pathname==='/mygroomer_dev','Refusing nonlocal database')
     const runtime=await request('/runtime')
-    assert.deepEqual(runtime.body.data,{localTest:true,googleAuthEnabled:false,paymentsEnabled:false})
+    assert.equal(runtime.body.data.localTest,true)
+    assert.equal(runtime.body.data.googleAuthEnabled,false)
+    assert.equal(runtime.body.data.paymentsEnabled,false)
+    assert.equal(runtime.body.data.petPhotoRequired,false)
+    assert.equal(runtime.body.data.databaseName,'mygroomer_dev')
     tutor=await login('tutor@email.com')
     groomer=await login('groomer@email.com')
     routineSnapshot = (await pool.query('SELECT travel_gap_minutes, manual_fit FROM providers WHERE id = $1', [id(3)])).rows[0]
@@ -138,14 +147,20 @@ test('registration and private resources reject unauthorized access',async()=>{
     assert.equal((await request('/conversations','POST',{booking_id:id(20),provider_id:id(2)},outsider)).status,403)
 })
 
-test('tutor pet is private, optional photo is omitted, and a saved pet is reused',async()=>{
+test('tutor pet is private, weight is required, and a saved pet is reused',async()=>{
     const tutorUser=await pool.query("SELECT id FROM users WHERE email='tutor@email.com'")
-    const payload={name:'Rex integração',species:'dog',breed:'SRD',size:'medium',age_years:4,notes:'Medo de secador'}
+    const runtime=await request('/runtime')
+    assert.equal(runtime.status,200)
+    const photoRequired=runtime.body.data.petPhotoRequired===true
+    const payload={name:'Rex integração',species:'dog',breed:'SRD',size:'medium',age_years:4,weight_kg:12.5,notes:'Medo de secador',...(photoRequired?{photo:tinyPhoto}:{})}
     const invalid=await request('/pets','POST',{name:'',species:'bird',breed:'',size:'huge',age_years:-1,notes:'x'.repeat(501)},tutor)
     assert.equal(invalid.status,400)
-    for (const field of ['name','species','breed','size','age_years','notes']) {
+    for (const field of ['name','species','breed','size','age_years','weight_kg','notes']) {
         assert.ok(invalid.body.errors.some(issue=>issue.field===field), field)
     }
+    const tooFine=await request('/pets','POST',{...payload,name:'Peso fino',weight_kg:0.004},tutor)
+    assert.equal(tooFine.status,400)
+    assert.ok(tooFine.body.errors.some(issue=>issue.field==='weight_kg'))
     assert.equal((await request('/pets')).status,401)
     assert.equal((await request('/pets','GET',undefined,groomer)).status,403)
     assert.equal((await request('/pets','POST',payload,groomer)).status,403)
@@ -153,7 +168,9 @@ test('tutor pet is private, optional photo is omitted, and a saved pet is reused
     assert.equal(saved.status,201)
     const pet=saved.body.data
     created.pets.push(pet.id)
+    assert.equal(pet.weight_kg,12.5)
     assert.equal(pet.photo_url,null)
+    assert.equal(pet.has_photo,photoRequired)
     assert.equal(pet.owner_id,tutorUser.rows[0].id)
     assert.equal(pet.species,'dog')
     assert.equal(pet.breed,'SRD')
@@ -196,8 +213,71 @@ test('tutor pet is private, optional photo is omitted, and a saved pet is reused
     assert.equal(detail.body.data.pet_notes,'Tosa na tesoura')
 })
 
+test('stored pet photo stays out of the json and is limited to the tutor and the booked groomer',async()=>{
+    const saved=await request('/pets','POST',{name:'Pet com foto',species:'dog',breed:'SRD',size:'small',age_years:3,weight_kg:6.5,photo:tinyPhoto},tutor)
+    assert.equal(saved.status,201,JSON.stringify(saved.body))
+    const pet=saved.body.data
+    created.pets.push(pet.id)
+    assert.equal(pet.photo,undefined)
+    assert.equal(JSON.stringify(pet).includes(tinyPhoto.base64),false)
+    const own=await readImage('/pets/'+pet.id+'/photo',tutor)
+    assert.equal(own.status,200)
+    assert.equal(own.type,'image/png')
+    assert.equal(own.bytes.length,70)
+    assert.equal(own.bytes[0],0x89)
+    assert.equal((await readImage('/pets/'+pet.id+'/photo',outsider)).status,404)
+    assert.equal((await readImage('/pets/'+pet.id+'/photo',groomer)).status,403)
+    const scheduledAt=await nextSlot(pet.id, 5)
+    const booking=await request('/bookings','POST',{pet_id:pet.id,provider_service_id:id(10),scheduled_at:scheduledAt,customer_location:'Integration test address'},tutor)
+    assert.equal(booking.status,201,JSON.stringify(booking.body))
+    const bookingId=booking.body.data.booking.id
+    created.bookings.push(bookingId)
+    const groomerPhoto=await readImage('/providers/requests/'+bookingId+'/pet-photo',groomer)
+    assert.equal(groomerPhoto.status,200)
+    assert.equal(groomerPhoto.type,'image/png')
+    assert.equal(groomerPhoto.bytes.length,70)
+    const { hash } = require('bcrypt')
+    const otherUser=crypto.randomUUID()
+    const otherProvider=crypto.randomUUID()
+    const otherEmail=`other-groomer-${otherUser}@mygroomer.test`
+    await pool.query(
+        `INSERT INTO users(id, name, email, password, role, email_verified_at) VALUES ($1,'Groomer de fora',$2,$3,'provider',NOW())`,
+        [otherUser, otherEmail, await hash('admin', 10)],
+    )
+    await pool.query(`INSERT INTO providers(id, user_id, travel_gap_minutes, manual_fit) VALUES ($1,$2,30,false)`, [otherProvider, otherUser])
+    try {
+        const other=await login(otherEmail)
+        assert.equal((await readImage('/providers/requests/'+bookingId+'/pet-photo', other)).status,403)
+    } finally {
+        await pool.query('DELETE FROM providers WHERE id=$1',[otherProvider])
+        await pool.query('DELETE FROM users WHERE id=$1',[otherUser])
+    }
+})
+
+test('reschedule keeps an appointment whose pet still has no weight',async()=>{
+    const pet=await request('/pets','POST',{name:'Pet antigo sem peso',species:'dog',breed:'SRD',size:'small',age_years:2,weight_kg:4.5},tutor)
+    assert.equal(pet.status,201,JSON.stringify(pet.body))
+    created.pets.push(pet.body.data.id)
+    const scheduledAt=await nextSlot(pet.body.data.id, 4)
+    const booking=await request('/bookings','POST',{pet_id:pet.body.data.id,provider_service_id:id(10),scheduled_at:scheduledAt,customer_location:'Integration test address'},tutor)
+    assert.equal(booking.status,201,JSON.stringify(booking.body))
+    const bookingId=booking.body.data.booking.id
+    created.bookings.push(bookingId)
+    await pool.query('UPDATE pets SET weight_kg = NULL WHERE id=$1',[pet.body.data.id])
+    const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(scheduledAt)).map(part=>[part.type,part.value]))
+    const date=`${parts.year}-${parts.month}-${parts.day}`
+    const blocked=await request(`/bookings/slots?provider_service_id=${id(10)}&pet_id=${pet.body.data.id}&date=${date}`,'GET',undefined,tutor)
+    assert.equal(blocked.status,409)
+    const opened=await request(`/bookings/slots?provider_service_id=${id(10)}&pet_id=${pet.body.data.id}&date=${date}&reschedule_booking_id=${bookingId}`,'GET',undefined,groomer)
+    assert.equal(opened.status,200,JSON.stringify(opened.body))
+    const next=opened.body.data.slots.find(slot=>slot!==scheduledAt)||opened.body.data.slots[0]
+    assert.ok(next)
+    const moved=await request('/bookings/'+bookingId+'/schedule','PATCH',{scheduled_at:next},groomer)
+    assert.equal(moved.status,200,JSON.stringify(moved.body))
+})
+
 test('local booking can be confirmed and cancelled without any payment',async()=>{
-    const pet=await request('/pets','POST',{name:'Pet do agendamento',species:'cat',breed:'SRD',size:'small',age_years:2},tutor)
+    const pet=await request('/pets','POST',{name:'Pet do agendamento',species:'cat',breed:'SRD',size:'small',age_years:2,weight_kg:4.5},tutor)
     assert.equal(pet.status,201)
     created.pets.push(pet.body.data.id)
     const scheduledAt=await nextSlot(pet.body.data.id, 7)

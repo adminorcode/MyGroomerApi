@@ -61,6 +61,7 @@ const petBody = (extra = {}) => ({
     breed: 'SRD',
     size: 'small',
     age_years: 3,
+    weight_kg: 8.5,
     notes: 'Gosta de carinho',
     ...extra,
 })

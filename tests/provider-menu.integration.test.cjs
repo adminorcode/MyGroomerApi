@@ -185,6 +185,7 @@ test('provider menu keeps size, type and active state visible only when publishe
         breed: 'SRD',
         size: 'medium',
         age_years: 3,
+        weight_kg: 4.5,
         notes: 'Teste de serviço inativo',
     }, tutor)
     assert.equal(pet.status, 201)
