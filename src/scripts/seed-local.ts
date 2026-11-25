@@ -63,14 +63,14 @@ export const seedLocal = async () => {
             ON CONFLICT DO NOTHING
         `)
         await execute(client, sql`
-            INSERT INTO ${categories}(id,name,description) VALUES
-            (${id(4)},'Banho e Tosa','Servicos demonstrativos para explorar o aplicativo') ON CONFLICT DO NOTHING
+            INSERT INTO ${categories}(id,name,description,is_active) VALUES
+            (${id(4)},'Banho e Tosa','Servicos demonstrativos para explorar o aplicativo',true) ON CONFLICT DO NOTHING
         `)
         const catalog = [[5,'Banho','Banho demonstrativo',80],[6,'Tosa','Tosa demonstrativa',100],[7,'Banho e tosa','Atendimento demonstrativo completo',150]] as const
         for (const [number,name,description,price] of catalog) {
             await execute(client, sql`
-                INSERT INTO ${services}(id,name,description,category_id)
-                VALUES (${id(number)},${name},${description},${id(4)}) ON CONFLICT DO NOTHING
+                INSERT INTO ${services}(id,name,description,category_id,is_active)
+                VALUES (${id(number)},${name},${description},${id(4)},true) ON CONFLICT DO NOTHING
             `)
             await execute(client, sql`
                 INSERT INTO ${providerServices}(id,provider_id,service_id,price)

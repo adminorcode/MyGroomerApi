@@ -4,7 +4,7 @@ import { CACHE_KEYS } from '../../constants'
 import { deleteCache } from '../../shared/cache/cache'
 import { withTransaction } from '../../shared/db/transaction'
 import { AppError } from '../../shared/errors'
-import { categoryExists } from '../catalog/category.service'
+import { findCategoryForMenu } from '../catalog/category.service'
 import { findServiceCategoryId } from '../catalog/service.service'
 import { findProviderTypeLink } from '../professional-type/professional-type.service'
 import { SaveMenuOffer } from './provider.schemas'
@@ -21,6 +21,7 @@ const DUPLICATE_NAME = 'Já existe um serviço com esse nome.'
 const NOT_FOUND = 'Serviço do groomer não encontrado.'
 const INVALID_MONEY = 'Informe preços maiores que zero, com no máximo duas casas decimais.'
 const INVALID_SERVICE = 'Serviço inválido.'
+const INACTIVE_CATALOG = 'Não é possível publicar um serviço inativo do catálogo.'
 const BOTH = 'Informe um serviço do catálogo ou um nome novo, não os dois.'
 const REPEATED = 'Serviço repetido no cardápio.'
 
@@ -106,7 +107,9 @@ export const readProviderMenu = async (providerId: string, client?: PoolClient):
             categories.name AS category_name
         FROM services
         INNER JOIN categories ON categories.id = services.category_id
-        WHERE NOT EXISTS (
+        WHERE services.is_active
+          AND categories.is_active
+          AND NOT EXISTS (
             SELECT 1 FROM ${providerServices}
             WHERE provider_services.provider_id = ${providerId}
               AND provider_services.service_id = services.id
@@ -121,7 +124,7 @@ export const readProviderMenu = async (providerId: string, client?: PoolClient):
           AND professional_types.is_active
         ORDER BY lower(professional_types.name), professional_types.name
     `)
-    const categories = await execute(client, sql`SELECT id, name FROM categories ORDER BY lower(name), name`)
+    const categories = await execute(client, sql`SELECT id, name FROM categories WHERE is_active ORDER BY lower(name), name`)
 
     return {
         offers: offers.rows.map(row => ({
@@ -172,11 +175,15 @@ const assertOffer = async (client: PoolClient, providerId: string, offer: SaveMe
     if (serviceId) {
         const service = await findServiceCategoryId(serviceId, client)
         if (!service) throw new AppError(INVALID_SERVICE, 400)
+        if (!offer.id && (!service.is_active || service.category_is_active !== true)) {
+            throw new AppError(INACTIVE_CATALOG, 400)
+        }
         categoryId = service.category_id
     } else if (!categoryId) {
         if (offer.is_active) throw new AppError(NEED_CATEGORY, 400)
-    } else if (!await categoryExists(categoryId, client)) {
-        throw new AppError(NEED_CATEGORY, 400)
+    } else {
+        const category = await findCategoryForMenu(categoryId, client)
+        if (!category || (!offer.id && !category.is_active)) throw new AppError(NEED_CATEGORY, 400)
     }
 
     await assertType(client, providerId, offer.professional_type_id ?? null, offer.is_active)
